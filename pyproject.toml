@@ -43,8 +43,8 @@ dev = [
 ]
 
 [project.scripts]
-marksgeometrys-ui = "marksgeometry_ui.__main__:main"
-mgui = "marksgeometry_ui.__main__:main"
+marksgeometrys-ui = "marksgeometrys_ui.__main__:main"
+mgui = "marksgeometrys_ui.__main__:main"
 
 [project.urls]
 Homepage = "https://github.com/marc1fino/marksgeometrys-ui"
