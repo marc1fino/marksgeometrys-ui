@@ -11,7 +11,7 @@ A beautiful, interactive desktop application for calculating areas and volumes o
 
 ## ✨ Features
 
-- **22 Geometric Shapes** — 8 two-dimensional and 14 three-dimensional shapes
+- **25 Geometric Shapes** — 8 two-dimensional and 17 three-dimensional shapes
 - **Real-time Visualization** — See a visual representation of each shape as you adjust parameters
 - **Instant Calculations** — Compute area and volume with a single click
 - **Parameter Validation** — Input constraints prevent invalid geometries

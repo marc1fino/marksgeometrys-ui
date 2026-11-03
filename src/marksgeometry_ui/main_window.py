@@ -5,7 +5,7 @@ from typing import Dict, Optional
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QLabel, QPushButton, QMessageBox, QStatusBar, QMenuBar,
-    QMenu, QToolBar, QApplication
+    QMenu, QToolBar, QApplication, QGroupBox
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QAction, QIcon, QFont
