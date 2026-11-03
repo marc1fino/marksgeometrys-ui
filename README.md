@@ -57,20 +57,20 @@ A beautiful, interactive desktop application for calculating areas and volumes o
 
 ### From PyPI (Recommended)
 ```bash
-pip install marksgeometry-ui
+pip install marksgeometrys-ui
 ```
 
 ### From Source
 ```bash
-git clone https://github.com/marc1fino/marksgeometry-ui.git
-cd marksgeometry-ui
+git clone https://github.com/marc1fino/marksgeometrys-ui.git
+cd marksgeometrys-ui
 pip install -e .
 ```
 
 ### Development Install
 ```bash
-git clone https://github.com/marc1fino/marksgeometry-ui.git
-cd marksgeometry-ui
+git clone https://github.com/marc1fino/marksgeometrys-ui.git
+cd marksgeometrys-ui
 pip install -e ".[dev]"
 ```
 
@@ -78,7 +78,7 @@ pip install -e ".[dev]"
 
 ### Launch the Application
 ```bash
-marksgeometry-ui
+marksgeometrys-ui
 ```
 
 Or use the short alias:
@@ -119,7 +119,7 @@ python -m marksgeometry_ui
 ## 🏗️ Project Structure
 
 ```
-marksgeometry-ui/
+marksgeometrys-ui/
 ├── src/
 │   └── marksgeometry_ui/
 │       ├── __init__.py          # Package initialization
@@ -204,8 +204,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-- **Issues**: [GitHub Issues](https://github.com/marc1fino/marksgeometry-ui/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/marc1fino/marksgeometry-ui/discussions)
+- **Issues**: [GitHub Issues](https://github.com/marc1fino/marksgeometrys-ui/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/marc1fino/marksgeometrys-ui/discussions)
 
 ---
 
