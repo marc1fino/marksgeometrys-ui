@@ -88,7 +88,7 @@ mgui
 
 ### Running from Source
 ```bash
-python -m marksgeometry_ui
+python -m marksgeometrys_ui
 ```
 
 ## 🖥️ Interface Overview
@@ -121,7 +121,7 @@ python -m marksgeometry_ui
 ```
 marksgeometrys-ui/
 ├── src/
-│   └── marksgeometry_ui/
+│   └── marksgeometrys_ui/
 │       ├── __init__.py          # Package initialization
 │       ├── __main__.py          # Entry point
 │       ├── main_window.py       # Main application window
@@ -163,7 +163,7 @@ pip install build
 python -m build
 ```
 
-This creates `dist/marksgeometry_ui-0.1.0.tar.gz` and `dist/marksgeometry_ui-0.1.0-py3-none-any.whl`
+This creates `dist/marksgeometrys_ui-0.1.0.tar.gz` and `dist/marksgeometrys_ui-0.1.0-py3-none-any.whl`
 
 ## 🤝 Contributing
 
