@@ -1,4 +1,4 @@
-"""Futuristic theme for MarksGeometry UI - QSS Stylesheets."""
+"""Futuristic theme for MarksGeometrys UI - QSS Stylesheets."""
 
 # Futuristic color palette
 COLORS = {
@@ -73,13 +73,22 @@ SPACING = {
     "2xl": "48px",
 }
 
-# Border radius scale
+# Border radius scale (for QSS - strings with px)
 RADIUS = {
     "sm": "6px",
     "md": "10px",
     "lg": "14px",
     "xl": "20px",
     "full": "9999px",
+}
+
+# Border radius scale (numeric values for QPainter)
+RADIUS_NUM = {
+    "sm": 6,
+    "md": 10,
+    "lg": 14,
+    "xl": 20,
+    "full": 9999,
 }
 
 # Shadows
