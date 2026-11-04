@@ -95,7 +95,7 @@ python -m marksgeometrys_ui
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  MarksGeometry - Geometry Calculator                        │
+│  MarksGeometrys - Geometry Calculator                        │
 ├─────────────────────┬───────────────────────────────────────┤
 │  Category: [2D ▼]   │        Shape Visualization            │
 │  Shape:   [Circle ▼]│                                       │

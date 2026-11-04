@@ -1,4 +1,4 @@
-"""Entry point for MarksGeometry UI."""
+"""Entry point for MarksGeometrys UI."""
 
 from .main_window import main
 
