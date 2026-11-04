@@ -175,30 +175,13 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-### Commit Convention
-
-This project uses conventional commits with emojis:
-
-| Type | Emoji | Description |
-|------|-------|-------------|
-| feat | ✨ | New feature |
-| fix | 🐛 | Bug fix |
-| docs | 📝 | Documentation changes |
-| style | 💄 | Code style/formatting |
-| refactor | ♻️ | Code refactoring |
-| test | ✅ | Adding tests |
-| chore | 🔧 | Maintenance tasks |
-| perf | ⚡ | Performance improvements |
-
-Example: `git commit -m '✨ Add support for Ellipsoid shape'`
-
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
-- **[marksgeometrys](https://pypi.org/project/marksgeometrys/)** — The underlying geometry calculation library
+- **[marksgeometrys](https://pypi.org/project/marksgeometrys/)** — My geometry calculation library
 - **[PyQt6](https://www.qt.io/)** — The GUI framework
 - **Icons** — [Feather Icons](https://feathericons.com/)
 
@@ -206,9 +189,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - **Issues**: [GitHub Issues](https://github.com/marc1fino/marksgeometrys-ui/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/marc1fino/marksgeometrys-ui/discussions)
-
----
-
-<p align="center">
-  Made with ❤️ by <a href="https://github.com/marc1fino">Marc</a>
-</p>
