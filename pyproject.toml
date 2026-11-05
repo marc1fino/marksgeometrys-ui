@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [
-    {name = "Marc", email = "marc@example.com"}
+    {name = "Marc", email = "marcperezcarrasco2010@gmail.com"}
 ]
 keywords = ["geometry", "calculator", "area", "volume", "shapes", "pyqt", "desktop"]
 classifiers = [
