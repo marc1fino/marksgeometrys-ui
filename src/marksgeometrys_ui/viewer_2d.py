@@ -34,6 +34,7 @@ class ShapeVisualizationWidget(QWidget):
         load_fonts()
         self.current_shape: Optional[ShapeConfig] = None
         self.current_values: Dict[str, float] = {}
+        self.unit = "cm"
         self._from_values: Dict[str, float] = {}
         self._transition = 1.0
         self._zoom = 1.0
@@ -45,7 +46,7 @@ class ShapeVisualizationWidget(QWidget):
         self._appearance = False
         self._measurement_mode = "dimensions"
         self._animation = QPropertyAnimation(self, b"transition", self)
-        self._animation.setDuration(320)
+        self._animation.setDuration(360)
         self._animation.setEasingCurve(QEasingCurve.Type.OutCubic)
         self.setMinimumSize(240, 200)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -71,6 +72,8 @@ class ShapeVisualizationWidget(QWidget):
     def set_shape(self, shape_config: ShapeConfig, values: Dict[str, float]):
         """Update a figure without restarting the camera during parameter edits."""
         same_shape = self.current_shape is not None and self.current_shape.name == shape_config.name
+        if same_shape and values == self.current_values:
+            return
         self._from_values = self._display_values() if same_shape else dict(values)
         self._animation.stop()
         self.current_shape = shape_config
@@ -106,6 +109,13 @@ class ShapeVisualizationWidget(QWidget):
 
     def set_dimensions_visible(self, visible: bool):
         self._dimensions_visible = bool(visible)
+        self.update()
+
+    def set_unit(self, unit: str):
+        """Relabel the existing geometry without converting or resetting it."""
+        if not isinstance(unit, str) or not unit.strip():
+            raise ValueError("A non-empty measurement unit is required.")
+        self.unit = unit.strip()
         self.update()
 
     def set_measurement_mode(self, mode: str):
@@ -338,7 +348,7 @@ class ShapeVisualizationWidget(QWidget):
         painter.setFont(self._font(11))
         painter.setPen(INK)
         painter.drawText(QRectF(12, self.height() - 26, self.width() - 24, 18),
-                         Qt.AlignmentFlag.AlignCenter, f"Grid: {step} cm × {step} cm")
+                         Qt.AlignmentFlag.AlignCenter, f"Grid: {step} {self.unit} × {step} {self.unit}")
 
     def _draw_volume_example(self, painter):
         """A unit cube illustrates the third dimension absent from a plane figure."""
@@ -365,7 +375,7 @@ class ShapeVisualizationWidget(QWidget):
         painter.setFont(self._font(11))
         painter.setPen(BLUE)
         painter.drawText(QRectF(origin.x() - 8, origin.y() + size + 6, size + offset + 16, 18),
-                         Qt.AlignmentFlag.AlignCenter, "1 cm³")
+                         Qt.AlignmentFlag.AlignCenter, f"1 {self.unit}³")
         painter.setPen(INK)
         painter.drawText(QPointF(18, self.height() - 16), "2D · no volume")
 
@@ -376,7 +386,7 @@ class ShapeVisualizationWidget(QWidget):
     def _draw_dimensions(self, painter, values, bounds, center, points, scale):
         name = self.current_shape.name
         value = lambda key: float(values.get(key, 1.0))
-        text = lambda prefix, key: f"{prefix} {self._number(value(key))} cm"
+        text = lambda prefix, key: f"{prefix} {self._number(value(key))} {self.unit}"
         left, right = bounds.left(), bounds.right()
         top, bottom = bounds.top(), bounds.bottom()
         if name == "circle":
@@ -419,7 +429,7 @@ class ShapeVisualizationWidget(QWidget):
             midpoint = (edge[0] + edge[1]) / 2
             self._construction(painter, center, midpoint)
             self._pill(painter, (center + midpoint) / 2 + QPointF(22, 0),
-                       f"a = {self._number(apothem)} cm", CYAN)
+                       f"a = {self._number(apothem)} {self.unit}", CYAN)
             self._measure(painter, edge[1], edge[0], text("l =", "side"), 26, BLUE)
 
     def _construction(self, painter, start, end):

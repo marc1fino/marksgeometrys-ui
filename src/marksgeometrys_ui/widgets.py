@@ -102,6 +102,23 @@ class ParameterWidget(QWidget):
     def set_value(self, value: float):
         self.spinbox.setValue(int(value) if isinstance(self.spinbox, QSpinBox) else float(value))
 
+    def set_unit(self, unit: str):
+        """Relabel a dimension without converting its value or emitting an edit."""
+        parameter_unit = self.parameter.unit
+        if not parameter_unit:
+            suffix = ""
+        else:
+            power = parameter_unit[-1] if parameter_unit.endswith(("²", "³")) else ""
+            suffix = " " + unit + power
+        blocked = self.spinbox.blockSignals(True)
+        try:
+            value = self.spinbox.value()
+            self.spinbox.setSuffix(suffix)
+            if self.spinbox.value() != value:
+                self.spinbox.setValue(value)
+        finally:
+            self.spinbox.blockSignals(blocked)
+
 
 class ShapeSelectorWidget(QWidget):
     """Segmented dimension selector and keyboard-accessible shape picker."""
@@ -199,6 +216,7 @@ class ParameterFormWidget(QWidget):
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.parameter_widgets = []
+        self.current_unit = "cm"
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -232,6 +250,7 @@ class ParameterFormWidget(QWidget):
         self.parameter_widgets = []
         for parameter in shape_config.parameters:
             widget = ParameterWidget(parameter, shape_name=shape_config.name)
+            widget.set_unit(self.current_unit)
             widget.value_changed.connect(self._on_value_changed)
             self.parameter_widgets.append(widget)
             self.form_layout.addWidget(widget)
@@ -245,6 +264,12 @@ class ParameterFormWidget(QWidget):
     def get_values(self) -> Dict[str, float]:
         return {widget.parameter.name: widget.get_value() for widget in self.parameter_widgets}
 
+    def set_unit(self, unit: str):
+        """Apply the selected unit to current and subsequently selected shapes."""
+        self.current_unit = unit
+        for widget in self.parameter_widgets:
+            widget.set_unit(unit)
+
 
 class ResultCard(QFrame):
     """A stable-size result card with interruptible numeric interpolation."""
@@ -256,6 +281,7 @@ class ResultCard(QFrame):
         self._value = None
         self._display_value = 0.0
         self._animations_enabled = True
+        self._value_font_size = 34
         self.setObjectName("ResultCard")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setMinimumWidth(0)
@@ -279,6 +305,7 @@ class ResultCard(QFrame):
         header.addWidget(self.title_label)
         header.addStretch(1)
         self.unit_label = QLabel(unit)
+        self.unit_label.setTextFormat(Qt.TextFormat.PlainText)
         self.unit_label.setStyleSheet(
             f"color: {icon_color}; font-family: '{FONTS['primary']}'; font-size: 11px; "
             "background: #F3F7FE; border-radius: 5px; padding: 3px 7px;"
@@ -336,9 +363,15 @@ class ResultCard(QFrame):
         self._display_value = value
         text = self._format_value(value)
         self.value_label.setText(text)
+        self._set_value_font_size(34 if len(text) <= 11 else 28)
+
+    def _set_value_font_size(self, size):
+        if size == self._value_font_size:
+            return
+        self._value_font_size = size
         self.value_label.setStyleSheet(
             f"color: #182944; font-family: '{FONTS['display']}'; font-size: "
-            + ("34" if len(text) <= 11 else "28") + "px; font-weight: 600;"
+            + str(size) + "px; font-weight: 600;"
         )
 
     def _finish_animation(self):
@@ -346,9 +379,13 @@ class ResultCard(QFrame):
             self.display_value = self._value
 
     def set_value(self, value):
+        target = self._parse_value(value)
+        if target is not None and target == self._value:
+            return
         self._animation.stop()
-        self._value = self._parse_value(value)
+        self._value = target
         if self._value is None:
+            self._set_value_font_size(34)
             self.value_label.setText("—")
             self.value_label.setToolTip("Calculate to see the result from marksgeometrys")
             self._display_value = 0.0
@@ -366,6 +403,13 @@ class ResultCard(QFrame):
         self.formula_label.setText(formula)
         self.formula_label.setToolTip(formula)
 
+    def set_unit(self, unit: str):
+        """Update a result's displayed unit while preserving its value and animation."""
+        self.unit = unit
+        self.unit_label.setText(unit)
+        if self._value is not None:
+            self.value_label.setToolTip(f"{self._value:.12g} {unit}")
+
     def set_animations_enabled(self, enabled):
         self._animations_enabled = bool(enabled)
         if not enabled:
@@ -380,6 +424,7 @@ class ResultsWidget(QWidget):
         super().__init__(parent)
         self.current_shape_name = ""
         self._is_3d = False
+        self.current_unit = "cm"
         self.setMinimumWidth(0)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -394,9 +439,8 @@ class ResultsWidget(QWidget):
         self.current_shape_name = shape_name
         self._is_3d = is_3d
         self.area_card.set_formula("marksgeometrys · area()")
-        volume_method = "volum()" if shape_name == "sphere" else "volume()"
         self.volume_card.set_formula(
-            "marksgeometrys · " + volume_method if is_3d else "Not defined for a plane figure"
+            "marksgeometrys · volume()" if is_3d else "Not defined for a plane figure"
         )
         self.area_card.set_value(area)
         self.volume_card.set_value(volume if is_3d else None)
@@ -404,6 +448,12 @@ class ResultsWidget(QWidget):
             "color: " + ("#60718B" if is_3d else "#A5B0C0")
             + f"; font-family: '{FONTS['primary']}'; font-size: 12px; font-weight: 600;"
         )
+
+    def set_unit(self, unit: str):
+        """Use squared/cubed labels without changing the library's numeric results."""
+        self.current_unit = unit
+        self.area_card.set_unit(unit + "²")
+        self.volume_card.set_unit(unit + "³")
 
     def clear(self, is_3d=None, shape_name=None):
         self.set_results(

@@ -5,7 +5,8 @@ import sys
 import unittest
 from unittest.mock import patch
 
-from PyQt6.QtCore import QPoint, Qt
+from PyQt6.QtCore import QPoint, QPointF, Qt
+from PyQt6.QtGui import QPainter
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication
 
@@ -108,6 +109,24 @@ class PlaneViewerTests(unittest.TestCase):
         self.viewer.set_shape(shape, {"base": 6.0, "height": 4.0})
         self.assertEqual(self.viewer._animation.state().name, "Running")
 
+    def test_rapid_edits_continue_from_the_displayed_geometry(self):
+        shape = get_shape_config("rectangle")
+        self.viewer.set_shape(shape, {"base": 5., "height": 3.})
+        self.viewer.show()
+        self.app.processEvents()
+        self.viewer.set_shape(shape, {"base": 9., "height": 6.})
+        self.viewer._animation.setCurrentTime(120)
+        displayed = self.viewer._display_values()
+        self.viewer.set_shape(shape, {"base": 12., "height": 4.})
+        self.assertEqual(self.viewer._from_values, displayed)
+        self.assertEqual(self.viewer._display_values(), displayed)
+        self.viewer._animation.setCurrentTime(80)
+        elapsed = self.viewer._animation.currentTime()
+        self.viewer.set_shape(shape, {"base": 12., "height": 4.})
+        self.assertEqual(self.viewer._animation.currentTime(), elapsed)
+        self.viewer._animation.setCurrentTime(self.viewer._animation.duration())
+        self.assertEqual(self.viewer._display_values(), {"base": 12., "height": 4.})
+
     def test_polygon_apothem_and_side_dimensions_match_the_outline(self):
         self.viewer.resize(800, 500)
         shape = get_shape_config("regular_polygon")
@@ -153,6 +172,63 @@ class PlaneViewerTests(unittest.TestCase):
         self.assertNotEqual(image.pixelColor(250, 115).name(), "#ffffff")
         with self.assertRaises(ValueError):
             self.viewer.set_measurement_mode("unrecognized")
+
+    def test_units_relabel_dimensions_grid_and_cube_without_converting_geometry(self):
+        viewer = self.viewer
+        viewer.resize(720, 460)
+        viewer.set_animations_enabled(False)
+        config = get_shape_config("regular_polygon")
+        values = {"side": 3., "sidesnumber": 6.}
+        viewer.set_shape(config, values)
+        geometry = viewer._geometry(values)
+        texts = []
+
+        class RecordingPainter(QPainter):
+            def drawText(self, *args):
+                texts.append(str(args[-1]))
+                return super().drawText(*args)
+
+        for unit in ("mm", "in", "px"):
+            with self.subTest(unit=unit):
+                viewer.set_unit(unit)
+                viewer.set_shape(config, values)  # Same-value fast path must not hide unit changes.
+                texts.clear()
+                with patch("marksgeometrys_ui.viewer_2d.QPainter", RecordingPainter):
+                    for mode in ("dimensions", "area", "volume"):
+                        viewer.set_measurement_mode(mode)
+                        viewer.grab()
+                self.assertTrue(any(text.startswith("l =") and text.endswith(" " + unit) for text in texts))
+                self.assertTrue(any(text.startswith("a =") and text.endswith(" " + unit) for text in texts))
+                self.assertTrue(any(text.startswith("Grid:") and f"{unit} ×" in text for text in texts))
+                self.assertIn(f"1 {unit}³", texts)
+                self.assertFalse(any(" cm" in text for text in texts))
+                self.assertEqual(viewer.current_values, values)
+                self.assertEqual(viewer._geometry(values), geometry)
+                self.assertEqual(viewer.unit, unit)
+        for invalid in (None, "", "  "):
+            with self.assertRaises(ValueError):
+                viewer.set_unit(invalid)
+
+    def test_changing_units_keeps_an_in_progress_parameter_transition(self):
+        viewer = self.viewer
+        config = get_shape_config("rectangle")
+        viewer.set_shape(config, {"base": 5., "height": 3.})
+        viewer.show()
+        self.app.processEvents()
+        viewer.set_shape(config, {"base": 9., "height": 6.})
+        viewer._animation.setCurrentTime(120)
+        displayed = viewer._display_values()
+        elapsed, state = viewer._animation.currentTime(), viewer._animation.state()
+        viewer._pan = QPointF(7, 11)
+        viewer._zoom = 1.5
+        with patch.object(viewer, "update") as update:
+            viewer.set_unit("m")
+        update.assert_called_once()
+        self.assertEqual(viewer._animation.currentTime(), elapsed)
+        self.assertEqual(viewer._animation.state(), state)
+        self.assertEqual(viewer._display_values(), displayed)
+        self.assertEqual(viewer._pan, QPointF(7, 11))
+        self.assertEqual(viewer._zoom, 1.5)
 
 
 if __name__ == "__main__":

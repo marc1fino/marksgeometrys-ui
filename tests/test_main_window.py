@@ -131,7 +131,7 @@ class WorkspaceTests(unittest.TestCase):
         self.window._calculate()
         with patch("marksgeometrys.Cube") as library_class:
             library_class.return_value.area.return_value = None
-            library_class.return_value.volume.return_value = "123.45 cm³"
+            library_class.return_value.volume.return_value = 123.45
             self.window._calculate()
         self.assertTrue(self.window.error_label.isVisible())
         self.assertIn("marksgeometrys", self.window.error_label.text())
@@ -166,6 +166,86 @@ class WorkspaceTests(unittest.TestCase):
         self.window.measurement_combo.setCurrentIndex(0)
         self.assertTrue(self.window.wireframe_button.isEnabled())
         self.assertTrue(self.window.wireframe_button.isChecked())
+
+    def test_unit_selection_updates_the_entire_workspace_and_invalidates_results(self):
+        self.select("cube")
+        self.window._calculate()
+        self.assertEqual(self.window.results_widget.volume_card._value, 27)
+        values = self.window.current_values.copy()
+        self.window.unit_combo.setCurrentText("mm")
+        self.assertEqual(self.window.current_values, values)
+        self.assertIsNone(self.window.results_widget.area_card._value)
+        self.assertIsNone(self.window.results_widget.volume_card._value)
+        self.assertEqual(self.window.param_form.parameter_widgets[0].spinbox.suffix(), " mm")
+        self.assertEqual(self.window.viz_2d_widget.unit, "mm")
+        self.assertEqual(self.window.viz_3d_widget.unit, "mm")
+        self.assertEqual(self.window.results_widget.area_card.unit_label.text(), "mm²")
+        self.assertEqual(self.window.results_widget.volume_card.unit_label.text(), "mm³")
+        self.assertEqual(self.window.shape_info_label.text(), "mm  /  mm²  /  mm³")
+        self.window._calculate()
+        self.assertEqual(self.window.results_widget.volume_card._value, 27)
+
+    def test_selected_unit_reaches_the_real_library_constructor(self):
+        import marksgeometrys
+        self.select("cube")
+        self.window.unit_combo.setCurrentText("in")
+        with patch("marksgeometrys.Cube", wraps=marksgeometrys.Cube) as constructor:
+            self.window._calculate()
+        constructor.assert_called_once_with(side=3.0, unit="in")
+        self.assertEqual(self.window.results_widget.area_card._value, 54)
+        self.assertFalse(self.window.error_label.isVisible())
+
+    def test_unit_survives_shape_changes_and_reset_without_affecting_side_counts(self):
+        self.window.unit_combo.setCurrentText("µm")
+        self.select("regular_polygon")
+        fields = {field.parameter.name: field for field in self.window.param_form.parameter_widgets}
+        self.assertEqual(fields["side"].spinbox.suffix(), " µm")
+        self.assertEqual(fields["sidesnumber"].spinbox.suffix(), "")
+        fields["side"].spinbox.setValue(2.5)
+        self.window._reset_parameters()
+        self.assertEqual(self.window.current_unit, "µm")
+        self.assertEqual(self.window.unit_combo.currentText(), "µm")
+        self.assertEqual(self.window.results_widget.area_card.unit, "µm²")
+        self.assertEqual(self.window.param_form.parameter_widgets[0].spinbox.suffix(), " µm")
+
+    def test_measurement_help_uses_the_selected_squared_and_cubed_unit(self):
+        self.window.unit_combo.setCurrentText("ft")
+        for name in ("circle", "cube"):
+            self.select(name)
+            for mode, power in ((1, "²"), (2, "³")):
+                self.window.measurement_combo.setCurrentIndex(mode)
+                self.assertIn("ft" + power, self.window.measurement_help.text())
+                self.assertNotIn("cm", self.window.measurement_help.text())
+
+    def test_empty_unit_blocks_calculation_instead_of_reusing_an_old_unit(self):
+        self.window._calculate()
+        self.window.unit_combo.setCurrentText("")
+        with patch("marksgeometrys_ui.main_window.calculate_shape") as calculate:
+            self.window._calculate()
+        calculate.assert_not_called()
+        self.assertTrue(self.window.error_label.isVisible())
+        self.assertIsNone(self.window.results_widget.area_card._value)
+        self.assertTrue(self.window.calc_button.isEnabled())
+        self.window.unit_combo.setCurrentText("cm")
+        self.assertFalse(self.window.error_label.isVisible())
+        self.assertEqual(self.window.status_message.text(), "Ready")
+        self.window._calculate()
+        self.assertIsNotNone(self.window.results_widget.area_card._value)
+
+    def test_compact_layout_fits_units_and_all_measurement_modes(self):
+        self.window.resize(760, 580)
+        for unit in ("mm", "in", "µm"):
+            self.window.unit_combo.setCurrentText(unit)
+            for name in ("circle", "regular_polygon_prism"):
+                self.select(name)
+                for mode in range(3):
+                    self.window.measurement_combo.setCurrentIndex(mode)
+                    self.app.processEvents()
+                    self.assertLess(self.window.viz_stack.geometry().bottom(),
+                                    self.window.viewer_toolbar.geometry().top())
+                    self.assertGreaterEqual(self.window.viz_stack.height(), 140)
+                    self.assertLess(self.window.controls_scroll.geometry().bottom(),
+                                    self.window.calc_button.geometry().top())
 
 
 if __name__ == "__main__":

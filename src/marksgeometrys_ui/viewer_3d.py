@@ -340,6 +340,9 @@ class GLVisualizationWidget(QWidget):
         load_fonts()
         self.current_shape: Optional[ShapeConfig] = None
         self.current_values: Dict[str, float] = {}
+        self.unit = "cm"
+        self._displayed_values: Dict[str, float] = {}
+        self._edit_from_values: Dict[str, float] = {}
         self._mesh: Optional[Mesh] = None
         self._vertices: List[Vector] = []
         self._dimensions: List[DimensionSegment] = []
@@ -367,6 +370,12 @@ class GLVisualizationWidget(QWidget):
         self._entrance.setDuration(420)
         self._entrance.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._entrance.valueChanged.connect(self._set_reveal)
+        self._edit_animation = QVariantAnimation(self)
+        self._edit_animation.setDuration(260)
+        self._edit_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._edit_animation.setStartValue(0.)
+        self._edit_animation.setEndValue(1.)
+        self._edit_animation.valueChanged.connect(self._interpolate_dimensions)
         self.setMinimumSize(240, 200)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -400,25 +409,29 @@ class GLVisualizationWidget(QWidget):
     def hideEvent(self, event):
         self.anim_timer.stop()
         self._entrance.stop()
+        self._finish_dimension_transition()
         self._reveal = 1.
         self._last_pos = None
         super().hideEvent(event)
 
     def set_shape(self, shape_config: ShapeConfig, values: Dict[str, float]):
         changed = not self.current_shape or self.current_shape.name != shape_config.name
+        if not changed and values == self.current_values:
+            return
+        displayed = dict(self._displayed_values)
+        self._edit_animation.stop()
         self.current_shape = shape_config
         self.current_values = dict(values)
-        self._mesh = build_mesh(shape_config.name, values)
-        self._dimensions = build_dimensions(shape_config.name, values, self._mesh)
-        self._layers = section_layers(self._mesh)
-        vertices = self._mesh.vertices
-        low = [min(v[i] for v in vertices) for i in range(3)]
-        high = [max(v[i] for v in vertices) for i in range(3)]
-        center = tuple((low[i] + high[i]) / 2 for i in range(3))
-        radius = max(math.sqrt(sum((v[i] - center[i]) ** 2 for i in range(3))) for v in vertices)
-        self._model_center, self._model_radius = center, radius or 1.
-        self._vertices = [tuple((v[i] - center[i]) / (radius or 1.) for i in range(3))
-                          for v in vertices]
+        can_interpolate = (
+            not changed and self.isVisible() and self._animations_enabled
+            and displayed.keys() == values.keys()
+            and displayed.get("sidesnumber") == values.get("sidesnumber")
+        )
+        if can_interpolate:
+            self._edit_from_values = displayed
+            self._edit_animation.start()
+        else:
+            self._rebuild_scene(values)
         if changed:
             self._zoom = 1.
             self._entrance.stop()
@@ -430,6 +443,35 @@ class GLVisualizationWidget(QWidget):
                 self._reveal = 1.
         self._sync_timer()
         self.update()
+
+    def _interpolate_dimensions(self, progress):
+        values = {
+            name: value if name == "sidesnumber" else
+            self._edit_from_values[name] + (value - self._edit_from_values[name]) * progress
+            for name, value in self.current_values.items()
+        }
+        self._rebuild_scene(values)
+        self.update()
+
+    def _finish_dimension_transition(self):
+        self._edit_animation.stop()
+        if self.current_shape and self._displayed_values != self.current_values:
+            self._rebuild_scene(self.current_values)
+
+    def _rebuild_scene(self, values):
+        """Keep the surface, its labels and interior layers in the same animation frame."""
+        self._displayed_values = dict(values)
+        self._mesh = build_mesh(self.current_shape.name, values)
+        self._dimensions = build_dimensions(self.current_shape.name, values, self._mesh)
+        self._layers = section_layers(self._mesh) if self.measurement_mode == "volume" else []
+        vertices = self._mesh.vertices
+        low = [min(v[i] for v in vertices) for i in range(3)]
+        high = [max(v[i] for v in vertices) for i in range(3)]
+        center = tuple((low[i] + high[i]) / 2 for i in range(3))
+        radius = max(math.sqrt(sum((v[i] - center[i]) ** 2 for i in range(3))) for v in vertices)
+        self._model_center, self._model_radius = center, radius or 1.
+        self._vertices = [tuple((v[i] - center[i]) / (radius or 1.) for i in range(3))
+                          for v in vertices]
 
     def reset_view(self):
         self._azimuth, self._elevation, self._zoom = 35., 24., 1.
@@ -447,6 +489,7 @@ class GLVisualizationWidget(QWidget):
         self._animations_enabled = bool(enabled)
         if not self._animations_enabled:
             self._entrance.stop()
+            self._finish_dimension_transition()
             self._reveal = 1.
         self._sync_timer()
         self.update()
@@ -463,11 +506,21 @@ class GLVisualizationWidget(QWidget):
         self._show_dimensions = enabled
         self.update()
 
+    def set_unit(self, unit: str):
+        """Relabel measurements without changing the mesh, camera or animation."""
+        if not isinstance(unit, str) or not unit.strip():
+            raise ValueError("A non-empty measurement unit is required.")
+        self.unit = unit.strip()
+        self.update()
+
     def set_measurement_mode(self, mode: str):
         """Select geometric dimensions, external area or interior volume."""
         if mode not in ("dimensions", "area", "volume"):
             raise ValueError("Measurement mode must be dimensions, area or volume.")
+        if mode == self.measurement_mode:
+            return
         self.measurement_mode = mode
+        self._layers = section_layers(self._mesh) if mode == "volume" and self._mesh else []
         self.update()
 
     def zoom_in(self):
@@ -638,7 +691,7 @@ class GLVisualizationWidget(QWidget):
                 painter.drawLine(point, point + direction * 5 - normal * 2.2)
             value = (f"{dimension.length:.2f}".rstrip("0").rstrip(".")
                      if .01 <= dimension.length < 10000 else f"{dimension.length:.3g}")
-            text = "{} = {} cm".format(dimension.symbol, value)
+            text = "{} = {} {}".format(dimension.symbol, value, self.unit)
             label_center = midpoint + normal * (offset + 27)
             bounds = self._paint_label(painter, rect, label_center, text,
                                        dimension.title, normal, tangent)
@@ -725,7 +778,7 @@ class GLVisualizationWidget(QWidget):
         target = QPointF(center.x() + scale + 40, center.y() - scale * .4)
         bounds = self._paint_label(painter, rect, target,
             "A · surface area" if is_area else "V · volume",
-            "outer faces · cm²" if is_area else "interior layers · cm³")
+            f"outer faces · {self.unit}²" if is_area else f"interior layers · {self.unit}³")
         painter.setPen(QPen(BLUE, .8))
         painter.drawLine(anchor, QPointF(bounds.left(), bounds.center().y()))
         painter.setBrush(BLUE)

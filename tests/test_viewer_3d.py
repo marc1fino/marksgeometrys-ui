@@ -4,13 +4,14 @@ import itertools
 import math
 import os
 import unittest
+from unittest.mock import patch
 from collections import Counter
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import QAbstractAnimation, QPoint, Qt
-from PyQt6.QtGui import QFontDatabase
+from PyQt6.QtGui import QFontDatabase, QPainter
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication
 
@@ -192,6 +193,40 @@ class ViewportTests(unittest.TestCase):
         self.viewer.set_wireframe(False)
         self.assertNotEqual(wireframe, self.viewer.grab().toImage())
 
+    def test_volume_sections_are_lazy_and_follow_the_current_transition_frame(self):
+        config = get_shape_config("sphere")
+        with patch("marksgeometrys_ui.viewer_3d.section_layers", wraps=section_layers) as sections:
+            self.viewer.set_shape(config, {"radius": 3.})
+            self.viewer.show()
+            self.app.processEvents()
+            self.viewer.set_shape(config, {"radius": 4.})
+            self.viewer._edit_animation.setCurrentTime(100)
+            self.viewer.set_measurement_mode("area")
+            self.viewer._edit_animation.setCurrentTime(160)
+            sections.assert_not_called()
+            self.assertEqual(self.viewer._layers, [])
+
+            self.viewer.set_measurement_mode("volume")
+            self.assertEqual(sections.call_count, 1)
+            self.assertEqual(self.viewer._layers, section_layers(self.viewer._mesh))
+            self.viewer.set_measurement_mode("volume")
+            self.assertEqual(sections.call_count, 1)
+            self.viewer._edit_animation.setCurrentTime(200)
+            self.assertEqual(sections.call_count, 2)
+            self.assertEqual(self.viewer._layers, section_layers(self.viewer._mesh))
+
+            self.viewer.set_animations_enabled(False)
+            self.assertEqual(self.viewer._displayed_values, {"radius": 4.})
+            self.assertEqual(self.viewer._layers, section_layers(self.viewer._mesh))
+            self.viewer.set_measurement_mode("dimensions")
+            calls = sections.call_count
+            self.viewer.set_shape(config, {"radius": 5.})
+            self.assertEqual(sections.call_count, calls)
+            self.assertEqual(self.viewer._layers, [])
+            self.viewer.set_measurement_mode("volume")
+            self.assertEqual(sections.call_count, calls + 1)
+            self.assertEqual(self.viewer._layers, section_layers(self.viewer._mesh))
+
     def test_dimension_labels_stay_within_viewport_without_overlap(self):
         self.viewer.show()
         self.viewer.set_animations_enabled(False)
@@ -216,6 +251,34 @@ class ViewportTests(unittest.TestCase):
         self.assertEqual((self.viewer._azimuth, self.viewer._elevation, self.viewer._zoom),
                          (112., -18., 1.6))
         self.assertEqual(self.viewer.current_values["height"], 8.)
+
+    def test_parameter_transitions_keep_measurements_attached_and_rapid_edits_continuous(self):
+        config = get_shape_config("cylinder")
+        self.viewer.set_shape(config, {"radius": 3., "height": 5.})
+        self.viewer.show()
+        self.app.processEvents()
+        self.viewer.set_shape(config, {"radius": 4., "height": 9.})
+        self.assertEqual(self.viewer.current_values["height"], 9.)
+        self.assertEqual(self.viewer._edit_animation.state(), QAbstractAnimation.State.Running)
+        self.viewer._edit_animation.setCurrentTime(100)
+        displayed = dict(self.viewer._displayed_values)
+        self.assertGreater(displayed["height"], 5.)
+        self.assertLess(displayed["height"], 9.)
+        mesh_height = max(v[1] for v in self.viewer._mesh.vertices) - min(v[1] for v in self.viewer._mesh.vertices)
+        self.assertAlmostEqual(mesh_height, displayed["height"])
+        height = next(d for d in self.viewer._dimensions if d.title == "height")
+        self.assertAlmostEqual(height.length, displayed["height"])
+        self.viewer.set_shape(config, {"radius": 2., "height": 11.})
+        self.assertEqual(self.viewer._edit_from_values, displayed)
+        self.assertEqual(self.viewer._displayed_values, displayed)
+        self.viewer.set_animations_enabled(False)
+        self.assertEqual(self.viewer._edit_animation.state(), QAbstractAnimation.State.Stopped)
+        self.assertEqual(self.viewer._displayed_values, {"radius": 2., "height": 11.})
+        self.viewer.set_animations_enabled(True)
+        self.viewer.set_shape(config, {"radius": 4., "height": 7.})
+        self.viewer.hide()
+        self.assertEqual(self.viewer._edit_animation.state(), QAbstractAnimation.State.Stopped)
+        self.assertEqual(self.viewer._displayed_values, {"radius": 4., "height": 7.})
 
     def test_rotation_timer_stops_when_hidden_or_disabled(self):
         self.viewer.set_shape(get_shape_config("cube"), {"side": 3.})
@@ -262,6 +325,68 @@ class ViewportTests(unittest.TestCase):
         self.viewer.set_grid_visible(False)
         self.viewer.set_dimensions_visible(False)
         self.assertFalse(self.viewer.grab().isNull())
+
+    def test_units_relabel_actual_dimensions_and_measurement_tags(self):
+        viewer = self.viewer
+        viewer.set_animations_enabled(False)
+        config = get_shape_config("cylinder")
+        values = {"radius": 3., "height": 5.}
+        viewer.set_shape(config, values)
+        original_vertices = list(viewer._mesh.vertices)
+        texts = []
+
+        class RecordingPainter(QPainter):
+            def drawText(self, *args):
+                texts.append(str(args[-1]))
+                return super().drawText(*args)
+
+        for unit in ("mm", "in", "px"):
+            with self.subTest(unit=unit):
+                viewer.set_unit(unit)
+                viewer.set_shape(config, values)
+                texts.clear()
+                with patch("marksgeometrys_ui.viewer_3d.QPainter", RecordingPainter):
+                    for mode in ("dimensions", "area", "volume"):
+                        viewer.set_measurement_mode(mode)
+                        viewer.grab()
+                self.assertTrue(any(text.startswith("r =") and text.endswith(" " + unit) for text in texts))
+                self.assertTrue(any(text.startswith("h =") and text.endswith(" " + unit) for text in texts))
+                self.assertIn(f"outer faces · {unit}²", texts)
+                self.assertIn(f"interior layers · {unit}³", texts)
+                self.assertFalse(any(" cm" in text for text in texts))
+                self.assertEqual(viewer._mesh.vertices, original_vertices)
+                self.assertEqual(viewer.current_values, values)
+                self.assertEqual(viewer.unit, unit)
+        for invalid in (None, "", "  "):
+            with self.assertRaises(ValueError):
+                viewer.set_unit(invalid)
+
+    def test_changing_units_preserves_camera_mesh_layers_and_animation(self):
+        viewer = self.viewer
+        config = get_shape_config("cylinder")
+        viewer.set_shape(config, {"radius": 3., "height": 5.})
+        viewer.show()
+        self.app.processEvents()
+        viewer.set_measurement_mode("volume")
+        viewer.set_shape(config, {"radius": 4., "height": 9.})
+        viewer._edit_animation.setCurrentTime(100)
+        mesh, dimensions, layers = viewer._mesh, viewer._dimensions, viewer._layers
+        displayed = dict(viewer._displayed_values)
+        elapsed, state = viewer._edit_animation.currentTime(), viewer._edit_animation.state()
+        camera = viewer._azimuth, viewer._elevation, viewer._zoom
+        timer_active = viewer.anim_timer.isActive()
+        with patch.object(viewer, "update") as update:
+            viewer.set_unit("ft")
+        update.assert_called_once()
+        self.assertIs(viewer._mesh, mesh)
+        self.assertIs(viewer._dimensions, dimensions)
+        self.assertIs(viewer._layers, layers)
+        self.assertEqual(viewer._displayed_values, displayed)
+        self.assertEqual(viewer._edit_animation.currentTime(), elapsed)
+        self.assertEqual(viewer._edit_animation.state(), state)
+        self.assertEqual((viewer._azimuth, viewer._elevation, viewer._zoom), camera)
+        self.assertEqual(viewer.measurement_mode, "volume")
+        self.assertEqual(viewer.anim_timer.isActive(), timer_active)
 
 
 if __name__ == "__main__":

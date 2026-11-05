@@ -8,6 +8,8 @@ A desktop interface for the [marksgeometrys](https://pypi.org/project/marksgeome
 ## Run
 
 ```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 python -m pip install -e .
 python -m marksgeometrys_ui
 ```
@@ -16,11 +18,11 @@ The `marksgeometrys-ui` and `mgui` commands are also available.
 
 ## Calculations belong to marksgeometrys
 
-Every displayed area and volume comes directly from the installed `marksgeometrys` class through `area()`, `volume()`, or the sphere's `volum()` method. The interface does not replace results with its own formulas or modify the library.
+The interface requires **marksgeometrys 0.2 or later**. Every displayed area and volume comes directly from the installed library through its numeric `area()` and `volume()` methods, including `Sphere.volume()`. The interface does not replace results with its own formulas or modify the library.
 
-`calculations.py` validates inputs, derives dependent lengths, supplies the library's constructor arguments, and parses numeric results. Required base areas also come from the library's own 2D classes. `library_parameters()` exposes the exact constructor arguments for inspection.
+`calculations.py` validates inputs, derives dependent lengths, supplies the library's constructor arguments, and accepts numeric results without parsing unit-suffixed strings. Integer and floating-point results are supported; decimal dimensions and results are preserved. Required base areas also come from the library's own 2D classes. `library_parameters()` exposes the exact constructor arguments for inspection.
 
-The installed library's behavior is preserved, including its limitations. With **marksgeometrys 0.1.1**, `Octohedron.area()` and `Octohedron.volume()` return `None` for positive edge lengths. The interface reports that upstream error instead of fabricating a result. Other returned numeric values are displayed unchanged, even where that release's formulas differ from standard geometric formulas. A successful area or volume is retained if the other measurement fails.
+Version **0.2 fixes octahedron calculations**: all 25 configured shapes now produce numeric area results, and all 17 solids produce numeric volume results. The library also provides `area_formatted()` and `volume_formatted()` for callers needing unit-suffixed text; this interface uses the numeric methods and displays units separately. Results are displayed unchanged. Unexpected library failures are reported, and a successful measurement is retained if the other one fails.
 
 Some constructors require redundant inputs. The interface derives apothems and slant heights from the visible geometry; rectangular prisms use the entered third edge as the constructor's duplicate height. The legacy pyramid receives the base edge for both rectangular base-side arguments, and the trapezoidal prism's additional `pbase` length is the mean of its two parallel bases. No equivalent-area arguments are substituted to alter the library's results.
 
@@ -36,14 +38,18 @@ The illustrations explain what the measurements mean. They do not calculate or s
 
 Drag to pan in 2D or orbit in 3D, and scroll to zoom. **Reset view** restores the camera. **Preferences** contains animation, dimension-label, and wireframe options. Animations stop when hidden and can be disabled.
 
-The interface uses a restrained white layout, Arial typography, and blue linework. Inputs, labels, help, errors, documentation, and source comments are in English. Both viewports use Qt painting and work without PyOpenGL or an OpenGL context.
+The existing white layout is retained, with **Space Grotesk** display headings and **Manrope** controls, subtle blue accents, and softly shaded canvases. Both fonts are bundled with their SIL Open Font Licenses and do not require installation on the user's computer. Parameter changes and numeric results animate from their current displayed values, including when edits interrupt an animation. Inputs, labels, help, errors, documentation, and source comments are in English. Both viewports use Qt painting and work without PyOpenGL or an OpenGL context.
 
 ## Shapes
 
 - **2D:** circle, square, rectangle, triangle, rhombus, parallelogram, trapezoid, regular polygon.
 - **3D:** cube, sphere, cylinder, cone, cone frustum, pyramid, pyramid frustum, tetrahedron, octahedron, dodecahedron, icosahedron, rectangular prism, quadrangular prism, regular polygon prism, rhomboidal prism, triangular prism, trapezoidal prism.
 
-Lengths use **cm**, areas **cm²**, and volumes **cm³**. A shared symbol registry keeps input labels and graphical annotations consistent. Polygon bases are regular; triangular and trapezoidal prism drawings use symmetric bases. Dependent dimensions are derived for the library's required constructor inputs.
+The **Unit** selector offers **mm, cm, m, km, in, ft, yd, and px**, and accepts custom labels such as **µm**. The selected unit is passed to every `marksgeometrys` constructor, including the library primitives used for base areas. Input suffixes, dimension annotations, area grids, unit cubes, results, and help all follow the selection; areas use `unit²` and volumes use `unit³`. Side counts remain unitless.
+
+As in the library, choosing a unit interprets the entered numbers in that unit; it does **not** convert their magnitudes. Changing the selection clears previous results, and the unit is retained when switching shapes or resetting parameters. The initial unit is **cm**.
+
+A shared symbol registry keeps input labels and graphical annotations consistent. Polygon bases are regular; triangular and trapezoidal prism drawings use symmetric bases. Dependent dimensions are derived for the library's required constructor inputs. The original blue-and-turquoise cube logo is used in the header and window icon.
 
 ## Keyboard shortcuts
 
@@ -73,12 +79,13 @@ src/marksgeometrys_ui/
     main_window.py    # Layout, navigation, actions, and application state
     widgets.py        # Shape selection, parameters, and animated results
     theme.py          # White workspace and typography
+    typography.py     # Bundled Space Grotesk and Manrope fonts
     viewer_2d.py      # Plane geometry and measurement explanations
     viewer_3d.py      # Meshes, projected dimensions, interior layers, and camera
     calculations.py  # Strict adapter for marksgeometrys
     symbols.py       # Shared dimension symbols
     shapes.py        # Shape catalogue and independent dimensions
-    assets/          # Vector control icons
+    assets/          # Vector control icons and licensed font files
 tests/               # Library, viewport, control, and integration tests
 ```
 

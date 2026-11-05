@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+from .typography import FONTS
+
 COLORS = {
     "primary": "#2028FF", "primary_dark": "#1119DB", "primary_light": "#F1F2FF",
     "secondary": "#2028FF", "bg_primary": "#FFFFFF", "bg_secondary": "#FFFFFF",
@@ -10,7 +12,6 @@ COLORS = {
     "border_accent": "#BABDFF", "success": "#2028FF", "warning": "#926319",
     "error": "#A73745", "area_color": "#2028FF", "volume_color": "#2028FF",
 }
-FONTS = {"primary": "Arial", "display": "Arial", "mono": "Arial"}
 SPACING = {"xs": "4px", "sm": "8px", "md": "16px", "lg": "24px", "xl": "32px"}
 RADIUS_NUM = {"sm": 2, "md": 3, "lg": 4, "xl": 4}
 RADIUS = {name: f"{value}px" for name, value in RADIUS_NUM.items()}
@@ -21,15 +22,16 @@ def get_theme_stylesheet(dark: bool = False) -> str:
     assets = (Path(__file__).parent / "assets").as_posix()
     return """
     QWidget {
-        color: #242434; font-family: Arial; font-size: 13px;
+        color: #242434; font-family: '@PRIMARY@'; font-size: 13px;
         selection-background-color: #E8E9FF; selection-color: #2028FF;
     }
     QMainWindow, QWidget#Workspace { background: white; }
     QLabel { background: transparent; border: none; }
     QFrame#TopBar { background: white; border-bottom: 1px solid #EBEBF0; }
     QFrame#Card, QFrame#ViewerCard, QWidget#PanelContent { background: white; border: none; }
-    QLabel#Brand { color: #2028FF; font-size: 17px; font-weight: 700; }
-    QLabel#Heading { color: #2028FF; font-size: 30px; font-weight: 400; }
+    QLabel#Brand { color: #2028FF; font-family: '@DISPLAY@'; font-size: 20px; font-weight: 700; }
+    QLabel#Heading { color: #2028FF; font-family: '@DISPLAY@'; font-size: 42px; font-weight: 700; letter-spacing: -1px; }
+    QLabel#Heading[compact="true"] { font-size: 28px; letter-spacing: 0px; }
     QLabel#SectionLabel { color: #60606D; font-size: 13px; font-weight: 400; }
     QLabel#Description, QLabel#Muted { color: #85858F; font-size: 12px; }
     QLabel#DimensionBadge { color: #9797A0; font-size: 12px; }
@@ -114,7 +116,7 @@ def get_theme_stylesheet(dark: bool = False) -> str:
     QStatusBar::item { border: none; }
     QToolTip { background: white; color: #434351; border: 1px solid #DEDEE7; padding: 7px; }
     QDialog, QMessageBox { background: white; }
-    """.replace("@ASSETS@", assets)
+    """.replace("@ASSETS@", assets).replace("@PRIMARY@", FONTS["primary"]).replace("@DISPLAY@", FONTS["display"])
 
 
 def get_light_theme_stylesheet() -> str:

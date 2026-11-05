@@ -29,7 +29,7 @@ classifiers = [
     "Topic :: Desktop Environment",
 ]
 dependencies = [
-    "marksgeometrys>=0.1.1",
+    "marksgeometrys>=0.2",
     "PyQt6>=6.6.0",
 ]
 

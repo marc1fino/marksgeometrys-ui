@@ -2,14 +2,13 @@
 
 Every area and volume displayed by the app comes from an actual marksgeometrys
 method. This module validates inputs, derives dependent lengths, supplies the
-library's constructor arguments, and parses its unit-suffixed results. Upstream
+library's constructor arguments, and reads its numeric results. Upstream
 errors are reported explicitly; there are no local measurement fallbacks.
 """
 
 import math
-import re
 from importlib.metadata import PackageNotFoundError, version
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Union
 
 import marksgeometrys
 
@@ -22,6 +21,7 @@ except PackageNotFoundError:
 
 LIBRARY_LABEL = "marksgeometrys " + LIBRARY_VERSION
 Result = Tuple[float, Optional[float]]
+ConstructorArguments = Dict[str, Union[float, str]]
 
 
 class LibraryCalculationError(ValueError):
@@ -34,14 +34,11 @@ class LibraryCalculationError(ValueError):
 
 
 def _number(raw) -> float:
-    """Parse the library's numeric prefix independently of its unit encoding."""
+    """Accept the numeric API from marksgeometrys 0.2 without truncating decimals."""
     if raw is None:
         raise ValueError("returned no value")
-    if isinstance(raw, str):
-        match = re.match(r"\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)", raw)
-        if match is None:
-            raise ValueError("returned a non-numeric value")
-        raw = match.group(1)
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        raise ValueError("returned a non-numeric value; marksgeometrys 0.2 or later is required")
     number = float(raw)
     if not math.isfinite(number) or number < 0:
         raise ValueError("returned a non-finite or negative value")
@@ -78,10 +75,17 @@ def _apothem(side: float, sides: float) -> float:
     return side / (2 * math.tan(math.pi / sides))
 
 
-def _base_area(class_name: str, **dimensions) -> float:
+def _validate_unit(unit: str) -> str:
+    """Accept the library's custom unit labels without converting dimensions."""
+    if not isinstance(unit, str) or not unit.strip():
+        raise ValueError("A non-empty measurement unit is required.")
+    return unit.strip()
+
+
+def _base_area(class_name: str, unit: str, **dimensions) -> float:
     """Obtain required base-area arguments from library primitives as well."""
     try:
-        instance = getattr(marksgeometrys, class_name)(**dimensions)
+        instance = getattr(marksgeometrys, class_name)(unit=unit, **dimensions)
         return _number(instance.area())
     except Exception as exc:
         raise LibraryCalculationError(
@@ -89,22 +93,26 @@ def _base_area(class_name: str, **dimensions) -> float:
         ) from exc
 
 
-def library_parameters(config: ShapeConfig, values: Dict[str, float]) -> Dict[str, float]:
+def library_parameters(
+    config: ShapeConfig, values: Dict[str, float], unit: str = "cm"
+) -> ConstructorArguments:
     """Return the exact constructor arguments passed to marksgeometrys.
 
-    Several 0.1.1 constructors require redundant dimensions. Base-area inputs are
+    Several constructors require redundant dimensions. Base-area inputs are
     obtained from its own 2D classes; geometric lengths use the displayed shape.
     The Pyramid constructor has two rectangular base sides, supplied as the
     selected base edge. The app does not reinterpret them to correct its volume
-    formula for other side counts.
+    formula for other side counts. The selected unit labels the entered values;
+    changing the unit does not convert their magnitudes.
     """
+    unit = _validate_unit(unit)
     dimensions = _validate(config, values)
     name = config.name
     if name in ("regular_polygon", "regular_polygon_prism"):
         dimensions["apothem"] = _apothem(dimensions["side"], dimensions["sidesnumber"])
         if name == "regular_polygon_prism":
             dimensions["base"] = _base_area(
-                "RegularPolygon", side=dimensions["side"],
+                "RegularPolygon", unit, side=dimensions["side"],
                 sidesnumber=dimensions["sidesnumber"], apothem=dimensions["apothem"],
             )
     elif name == "cone_trunk":
@@ -132,22 +140,26 @@ def library_parameters(config: ShapeConfig, values: Dict[str, float]) -> Dict[st
         dimensions["height"] = dimensions["side3"]
     elif name == "quadrangular_prism":
         dimensions["base"] = _base_area(
-            "Rectangle", base=dimensions["side1"], height=dimensions["side2"]
+            "Rectangle", unit, base=dimensions["side1"], height=dimensions["side2"]
         )
     elif name == "rhomboidal_prism":
         dimensions["base"] = _base_area(
-            "Rhombus", largediagonal=dimensions["largediagonal"],
+            "Rhombus", unit, largediagonal=dimensions["largediagonal"],
             smalldiagonal=dimensions["smalldiagonal"],
         )
     elif name == "trapezoidal_prism":
         # This is the legacy constructor's prism-base length, not its area.
         dimensions["pbase"] = (dimensions["largebase"] + dimensions["smallbase"]) / 2
-    return dimensions
+    arguments: ConstructorArguments = dict(dimensions)
+    arguments["unit"] = unit
+    return arguments
 
 
-def calculate_shape(config: ShapeConfig, values: Dict[str, float]) -> Result:
+def calculate_shape(
+    config: ShapeConfig, values: Dict[str, float], unit: str = "cm"
+) -> Result:
     """Call the library's area/volume methods and preserve their numeric outputs."""
-    dimensions = library_parameters(config, values)
+    dimensions = library_parameters(config, values, unit)
     try:
         instance = getattr(marksgeometrys, config.class_name)(**dimensions)
     except Exception as exc:
@@ -164,7 +176,7 @@ def calculate_shape(config: ShapeConfig, values: Dict[str, float]) -> Result:
             failures.append("area: " + str(exc))
     if config.has_volume:
         try:
-            method = getattr(instance, "volume", None) or getattr(instance, "volum", None)
+            method = getattr(instance, "volume", None)
             if not callable(method):
                 raise ValueError("no volume method is available")
             volume = _number(method())

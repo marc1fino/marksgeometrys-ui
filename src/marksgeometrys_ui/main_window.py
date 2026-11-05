@@ -4,7 +4,7 @@ import sys
 from typing import Dict, Optional
 
 from PyQt6.QtCore import QEasingCurve, QPoint, QPointF, QPropertyAnimation, QRectF, Qt, QTimer
-from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPalette, QPen, QPixmap, QPolygonF
+from PyQt6.QtGui import QAction, QBrush, QColor, QFont, QIcon, QLinearGradient, QPainter, QPalette, QPen, QPixmap, QPolygonF
 from PyQt6.QtWidgets import (
     QApplication, QComboBox, QFrame, QHBoxLayout, QLabel, QMainWindow, QMenu,
     QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSplitter, QStackedWidget,
@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
 from .calculations import LIBRARY_LABEL, LibraryCalculationError, calculate_shape
 from .shapes import ShapeConfig, get_shape_config
 from .theme import FONTS, get_light_theme_stylesheet
+from .typography import load_fonts
 from .widgets import (
     GLVisualizationWidget, ParameterFormWidget, ResultsWidget, SHAPE_NAMES,
     ShapeSelectorWidget, ShapeVisualizationWidget,
@@ -22,32 +23,35 @@ from .widgets import (
 
 def label(text: str, role: str) -> QLabel:
     widget = QLabel(text)
+    widget.setTextFormat(Qt.TextFormat.PlainText)
     widget.setObjectName(role)
     return widget
 
 
 class BrandMark(QWidget):
-    """A small folded-square wordmark, drawn as resolution-independent linework."""
+    """The original blue and turquoise cube, drawn as crisp vector linework."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedSize(36, 36)
+        self.setFixedSize(42, 42)
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(QPen(QColor("#2028FF"), 1.5))
+        gradient = QLinearGradient(0, 0, 42, 42)
+        gradient.setColorAt(0, QColor("#2764EF"))
+        gradient.setColorAt(1, QColor("#10BED1"))
+        painter.setBrush(QBrush(gradient))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRoundedRect(QRectF(0, 0, 42, 42), 12, 12)
+        painter.setPen(QPen(QColor("white"), 1.45))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawPolygon(QPolygonF([
-            QPointF(3, 3), QPointF(32, 3), QPointF(32, 32),
-            QPointF(8, 32), QPointF(3, 27),
+            QPointF(21, 8), QPointF(32, 15), QPointF(32, 28),
+            QPointF(21, 35), QPointF(10, 28), QPointF(10, 15),
         ]))
-        painter.drawPolyline(QPolygonF([QPointF(3, 27), QPointF(8, 27), QPointF(8, 32)]))
-        font = QFont("Arial")
-        font.setPixelSize(17)
-        font.setBold(True)
-        painter.setFont(font)
-        painter.drawText(QRectF(3, 2, 29, 29), Qt.AlignmentFlag.AlignCenter, "M")
+        for point in (QPointF(32, 15), QPointF(21, 35), QPointF(10, 15)):
+            painter.drawLine(QPointF(21, 22), point)
 
 
 class MainWindow(QMainWindow):
@@ -55,8 +59,11 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
+        load_fonts()
         self.current_shape_config: Optional[ShapeConfig] = None
         self.current_values: Dict[str, float] = {}
+        self.current_unit = "cm"
+        self._unit_is_valid = True
         self._calculation_in_progress = False
         self._motion_enabled = True
         self.setWindowTitle("MarksGeometrys")
@@ -147,7 +154,24 @@ class MainWindow(QMainWindow):
         self.description_label.setWordWrap(True)
         fields_layout.addWidget(self.description_label)
         self.parameter_heading = label("Parameters", "SectionLabel")
-        fields_layout.addWidget(self.parameter_heading)
+        parameter_header = QHBoxLayout()
+        parameter_header.addWidget(self.parameter_heading)
+        parameter_header.addStretch()
+        unit_label = label("Unit", "Muted")
+        self.unit_combo = QComboBox()
+        self.unit_combo.setObjectName("UnitPicker")
+        self.unit_combo.setAccessibleName("Measurement unit")
+        self.unit_combo.setEditable(True)
+        self.unit_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.unit_combo.addItems(["mm", "cm", "m", "km", "in", "ft", "yd", "px"])
+        self.unit_combo.setCurrentText(self.current_unit)
+        self.unit_combo.setMaximumWidth(100)
+        self.unit_combo.lineEdit().setMaxLength(12)
+        self.unit_combo.setToolTip("Choose a unit or enter a custom label. Entered numbers stay the same.")
+        unit_label.setBuddy(self.unit_combo)
+        parameter_header.addWidget(unit_label)
+        parameter_header.addWidget(self.unit_combo)
+        fields_layout.addLayout(parameter_header)
         self.param_form = ParameterFormWidget()
         self.param_form.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.param_form.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -277,6 +301,31 @@ class MainWindow(QMainWindow):
         self.param_form.values_changed.connect(self._on_values_changed)
         self.calc_button.clicked.connect(self._calculate)
         self.measurement_combo.currentIndexChanged.connect(self._on_measurement_mode_changed)
+        self.unit_combo.currentTextChanged.connect(self._on_unit_changed)
+
+    def _on_unit_changed(self, text):
+        unit = text.strip()
+        if not unit:
+            self._unit_is_valid = False
+            self._clear_results()
+            self.status_message.setText("Enter a measurement unit")
+            return
+        restoring_valid_unit = not self._unit_is_valid
+        self._unit_is_valid = True
+        if unit == self.current_unit:
+            if restoring_valid_unit:
+                self.error_label.hide()
+                self.status_message.setText("Ready")
+            return
+        self.current_unit = unit
+        self.param_form.set_unit(unit)
+        self.results_widget.set_unit(unit)
+        for viewer in (self.viz_2d_widget, self.viz_3d_widget):
+            viewer.set_unit(unit)
+        self.shape_info_label.setText(f"{unit}  /  {unit}²  /  {unit}³")
+        self._on_measurement_mode_changed()
+        self._clear_results()
+        self.status_message.setText("Unit changed to " + unit)
 
     def _on_shape_changed(self, shape_name):
         config = get_shape_config(shape_name)
@@ -318,11 +367,12 @@ class MainWindow(QMainWindow):
         is_3d = self.current_shape_config is not None and self.current_shape_config.category == "3D"
         self.wireframe_button.setEnabled(is_3d and mode == "dimensions")
         if mode == "area":
-            explanation = ("A · Surface area covers all the outside faces of the solid. Measured in cm²."
-                           if is_3d else "A · Area counts square units across the enclosed surface, measured in cm².")
+            explanation = (f"A · Surface area covers all the outside faces of the solid. Measured in {self.current_unit}²."
+                           if is_3d else f"A · Area counts square units across the enclosed surface, measured in {self.current_unit}².")
         elif mode == "volume":
-            explanation = ("V · Volume is the space inside the solid. The layers reveal its interior. Measured in cm³."
-                           if is_3d else "A plane figure has no volume. A 1 cm × 1 cm × 1 cm cube represents 1 cm³.")
+            unit = self.current_unit
+            explanation = (f"V · Volume is the space inside the solid. The layers reveal its interior. Measured in {unit}³."
+                           if is_3d else f"A plane figure has no volume. A 1 {unit} × 1 {unit} × 1 {unit} cube represents 1 {unit}³.")
         else:
             explanation = ""
         self.measurement_help.setText(explanation)
@@ -345,10 +395,14 @@ class MainWindow(QMainWindow):
         self.error_label.hide()
         config = self.current_shape_config
         try:
+            unit = self.unit_combo.currentText().strip()
+            if not unit:
+                raise ValueError("Choose a measurement unit.")
+            self._on_unit_changed(unit)
             for field in self.param_form.parameter_widgets:
                 field.spinbox.interpretText()
             self.current_values = self.param_form.get_values()
-            area, volume = calculate_shape(config, self.current_values)
+            area, volume = calculate_shape(config, self.current_values, unit=unit)
             self.results_widget.set_results(area, volume, config.category == "3D", config.name)
             self.status_message.setText("Calculated by " + LIBRARY_LABEL)
         except LibraryCalculationError as exc:
@@ -409,6 +463,11 @@ class MainWindow(QMainWindow):
         super().resizeEvent(event)
         if hasattr(self, "body_layout"):
             compact = self.width() < 1000
+            if self.viewer_title.property("compact") != compact:
+                self.viewer_title.setProperty("compact", compact)
+                self.viewer_title.style().unpolish(self.viewer_title)
+                self.viewer_title.style().polish(self.viewer_title)
+                self.viewer_title.updateGeometry()
             margin = 22 if compact else 40
             self.body_layout.setContentsMargins(margin, 22 if compact else 32, margin, 12)
             self.main_splitter.setHandleWidth(24 if compact else 36)
@@ -422,6 +481,8 @@ class MainWindow(QMainWindow):
     def _show_docs(self):
         QMessageBox.information(self, "Guide",
             "Choose a 2D or 3D shape, adjust its dimensions, then select Calculate.\n\n"
+            "Choose Unit to set mm, cm, m, inches, or a custom unit label.\n"
+            "Changing units keeps the entered numbers; it does not convert them.\n\n"
             "The Dimensions view labels each length directly on the figure.\n"
             "Area highlights the enclosed surface or the outside faces.\n"
             "Volume reveals interior layers; plane figures have no volume.\n\n"
@@ -436,11 +497,12 @@ class MainWindow(QMainWindow):
             "MarksGeometrys\n\nA visual interface for the marksgeometrys Python library.\n\n"
             "Calculation engine: " + LIBRARY_LABEL + "\n"
             "The interface displays the library's outputs without replacement formulas.\n\n"
-            "Lengths: cm · Areas: cm² · Volumes: cm³")
+            f"Lengths: {self.current_unit} · Areas: {self.current_unit}² · Volumes: {self.current_unit}³")
 
 
 def main():
     app = QApplication(sys.argv)
+    load_fonts()
     app.setApplicationName("MarksGeometrys")
     app.setOrganizationName("MarksGeometrys")
     app.setStyle("Fusion")
@@ -461,7 +523,7 @@ def main():
     app.setFont(QFont(FONTS["primary"], 10))
     app.setStyleSheet(get_light_theme_stylesheet())
     mark = BrandMark()
-    icon = QPixmap(36, 36)
+    icon = QPixmap(42, 42)
     icon.fill(Qt.GlobalColor.transparent)
     mark.render(icon)
     app.setWindowIcon(QIcon(icon))
