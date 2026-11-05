@@ -1,676 +1,475 @@
-"""Main application window for MarksGeometrys UI."""
+"""A restrained desktop workspace for the marksgeometrys Python library."""
 
-import marksgeometrys
+import sys
 from typing import Dict, Optional
-from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
-    QLabel, QPushButton, QMessageBox, QStatusBar, QMenuBar,
-    QMenu, QToolBar, QApplication, QGroupBox, QProgressBar,
-    QSizePolicy, QStackedWidget, QGraphicsOpacityEffect
-)
-from PyQt6.QtCore import (
-    Qt, QTimer, QPropertyAnimation, QEasingCurve, QRect, QPoint,
-    QParallelAnimationGroup, QSequentialAnimationGroup,
-    QAbstractAnimation, pyqtProperty
-)
-from PyQt6.QtGui import QAction, QIcon, QFont, QFontDatabase
 
-from .widgets import (
-    ShapeSelectorWidget, ParameterFormWidget,
-    ShapeVisualizationWidget, GLVisualizationWidget, ResultsWidget
+from PyQt6.QtCore import QEasingCurve, QPoint, QPointF, QPropertyAnimation, QRectF, Qt, QTimer
+from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPalette, QPen, QPixmap, QPolygonF
+from PyQt6.QtWidgets import (
+    QApplication, QComboBox, QFrame, QHBoxLayout, QLabel, QMainWindow, QMenu,
+    QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSplitter, QStackedWidget,
+    QStatusBar, QVBoxLayout, QWidget,
 )
-from .shapes import ShapeConfig, get_shape_config, ALL_SHAPES
-from .theme import get_dark_theme_stylesheet, FONTS
+
+from .calculations import LIBRARY_LABEL, LibraryCalculationError, calculate_shape
+from .shapes import ShapeConfig, get_shape_config
+from .theme import FONTS, get_light_theme_stylesheet
+from .widgets import (
+    GLVisualizationWidget, ParameterFormWidget, ResultsWidget, SHAPE_NAMES,
+    ShapeSelectorWidget, ShapeVisualizationWidget,
+)
+
+
+def label(text: str, role: str) -> QLabel:
+    widget = QLabel(text)
+    widget.setObjectName(role)
+    return widget
+
+
+class BrandMark(QWidget):
+    """A small folded-square wordmark, drawn as resolution-independent linework."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(36, 36)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QPen(QColor("#2028FF"), 1.5))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawPolygon(QPolygonF([
+            QPointF(3, 3), QPointF(32, 3), QPointF(32, 32),
+            QPointF(8, 32), QPointF(3, 27),
+        ]))
+        painter.drawPolyline(QPolygonF([QPointF(3, 27), QPointF(8, 27), QPointF(8, 32)]))
+        font = QFont("Arial")
+        font.setPixelSize(17)
+        font.setBold(True)
+        painter.setFont(font)
+        painter.drawText(QRectF(3, 2, 29, 29), Qt.AlignmentFlag.AlignCenter, "M")
 
 
 class MainWindow(QMainWindow):
-    """Main application window."""
+    """Keep calculations in the library and visual exploration in the viewports."""
 
     def __init__(self):
         super().__init__()
         self.current_shape_config: Optional[ShapeConfig] = None
         self.current_values: Dict[str, float] = {}
         self._calculation_in_progress = False
-
-        # Apply futuristic theme
-        self.setStyleSheet(get_dark_theme_stylesheet())
-
+        self._motion_enabled = True
+        self.setWindowTitle("MarksGeometrys")
+        self.setMinimumSize(760, 580)
+        self.resize(1220, 820)
+        self.setStyleSheet(get_light_theme_stylesheet())
         self._setup_ui()
-        self._setup_menu()
-        self._setup_statusbar()
+        self._setup_actions()
         self._connect_signals()
-
-        # Set initial shape
-        self.shape_selector.shape_changed.emit("circle")
+        self._on_shape_changed("circle")
+        self._toggle_grid(False)
+        QTimer.singleShot(0, self._animate_entrance)
 
     def _setup_ui(self):
-        """Set up the main UI layout."""
-        self.setWindowTitle("MarksGeometrys - Geometry Calculator")
-        self.setMinimumSize(800, 500)  # Smaller minimum for better fit on small screens
-        self.resize(1100, 700)
-
-        # Central widget with splitter
         central = QWidget()
+        central.setObjectName("Workspace")
         self.setCentralWidget(central)
-        main_layout = QHBoxLayout(central)
-        main_layout.setContentsMargins(8, 8, 8, 8)  # Smaller margins
-        main_layout.setSpacing(8)
-
-        # Create splitter for resizable panels
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.setHandleWidth(3)
-        splitter.setChildrenCollapsible(False)
-        main_layout.addWidget(splitter)
-
-        # Left panel - Controls
-        left_panel = self._create_left_panel()
-        splitter.addWidget(left_panel)
-
-        # Right panel - Visualization and Results
-        right_panel = self._create_right_panel()
-        splitter.addWidget(right_panel)
-
-        # Set initial splitter sizes (28% left, 72% right) - more space for visualization
-        splitter.setSizes([300, 800])
-
-        # Store splitter reference for resize handling
-        self.main_splitter = splitter
-
-        # Add entrance animation
-        self._animate_entrance()
-
-    def _create_left_panel(self) -> QWidget:
-        """Create the left control panel."""
-        panel = QWidget()
-        panel.setMinimumWidth(280)  # Smaller minimum for better responsiveness
-        panel.setMaximumWidth(380)  # Prevent panel from getting too wide
-        panel.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
-        layout = QVBoxLayout(panel)
-        layout.setSpacing(12)  # More compact spacing
-        layout.setContentsMargins(0, 0, 0, 0)
-
-        # Title with futuristic styling
-        title = QLabel("MarksGeometrys")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setProperty("title", True)
-        title.setStyleSheet(f"""
-            font-family: {FONTS['display']};
-            font-size: 24px;
-            font-weight: 800;
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #00D4FF, stop:1 #7C4DFF);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            padding: 6px 0;
-        """)
-        layout.addWidget(title)
-
-        # Subtitle
-        subtitle = QLabel("Geometry Calculator")
-        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        subtitle.setProperty("subtitle", True)
-        subtitle.setStyleSheet("color: #94A3B8; font-size: 12px; margin-bottom: 2px;")
-        layout.addWidget(subtitle)
-
-        # Shape selector
-        self.shape_selector = ShapeSelectorWidget()
-        layout.addWidget(self.shape_selector)
-
-        # Description card
-        self.description_label = QLabel()
-        self.description_label.setWordWrap(True)
-        self.description_label.setStyleSheet("""
-            QLabel {
-                color: #94A3B8;
-                padding: 12px;
-                background: rgba(26, 35, 58, 0.8);
-                border: 1px solid rgba(148, 163, 184, 0.15);
-                border-radius: 8px;
-                font-size: 12px;
-                line-height: 1.5;
-            }
-        """)
-        layout.addWidget(self.description_label)
-
-        # Parameter form
-        params_group = QGroupBox("Parameters")
-        params_layout = QVBoxLayout(params_group)
-        params_layout.setContentsMargins(10, 18, 10, 10)
-        self.param_form = ParameterFormWidget()
-        params_layout.addWidget(self.param_form)
-        layout.addWidget(params_group, stretch=1)  # Allow form to expand
-
-        # Calculate button with enhanced styling
-        self.calc_button = QPushButton("Calculate Area / Volume")
-        self.calc_button.setMinimumHeight(44)
-        font = QFont(FONTS["display"])
-        font.setPointSize(12)
-        font.setWeight(QFont.Weight.DemiBold)
-        self.calc_button.setFont(font)
-        self.calc_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        layout.addWidget(self.calc_button)
-
-        # Loading progress bar (hidden by default)
-        self.loading_bar = QProgressBar()
-        self.loading_bar.setProperty("loading", True)
-        self.loading_bar.setRange(0, 0)  # Indeterminate
-        self.loading_bar.setFixedHeight(3)
-        self.loading_bar.setTextVisible(False)
-        self.loading_bar.setVisible(False)
-        self.loading_bar.setStyleSheet("""
-            QProgressBar {
-                background: rgba(26, 35, 58, 0.5);
-                border: none;
-                border-radius: 1.5px;
-            }
-            QProgressBar::chunk {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #00D4FF, stop:1 #7C4DFF);
-                border-radius: 1.5px;
-            }
-        """)
-        layout.addWidget(self.loading_bar)
-
-        # Info label
-        info = QLabel("Enter parameters and click Calculate to compute area and volume.")
-        info.setWordWrap(True)
-        info.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        info.setProperty("caption", True)
-        info.setStyleSheet("color: #64748B; font-size: 10px; margin-top: 4px;")
-        layout.addWidget(info)
-
-        layout.addStretch()
-        return panel
-
-    def _create_right_panel(self) -> QWidget:
-        """Create the right visualization and results panel."""
-        panel = QWidget()
-        panel.setMinimumWidth(400)  # Ensure right panel has enough space
-        panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        layout = QVBoxLayout(panel)
-        layout.setSpacing(8)
-        layout.setContentsMargins(0, 0, 0, 0)
-
-        # Visualization - use stacked widget with smooth transitions
-        viz_group = QGroupBox("Visualization")
-        viz_layout = QVBoxLayout(viz_group)
-        viz_layout.setContentsMargins(10, 18, 10, 10)
-
-        # Custom animated stacked widget
-        self.viz_stack = AnimatedStackedWidget()
-        self.viz_stack.setMinimumHeight(300)
-        self.viz_stack.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-
-        # 2D visualization widget (QPainter-based)
-        self.viz_2d_widget = ShapeVisualizationWidget()
-        self.viz_2d_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.viz_stack.addWidget(self.viz_2d_widget)
-
-        # 3D visualization widget (OpenGL-based)
-        self.viz_3d_widget = GLVisualizationWidget()
-        self.viz_3d_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.viz_stack.addWidget(self.viz_3d_widget)
-
-        # Default to 2D
-        self.viz_stack.setCurrentIndex(0)
-
-        viz_layout.addWidget(self.viz_stack)
-        layout.addWidget(viz_group, stretch=3)  # More stretch for visualization
-
-        # Results
-        results_group = QGroupBox("Results")
-        results_layout = QVBoxLayout(results_group)
-        results_layout.setContentsMargins(10, 18, 10, 10)
-        self.results_widget = ResultsWidget()
-        self.results_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        results_layout.addWidget(self.results_widget)
-        layout.addWidget(results_group, stretch=1)
-
-        return panel
-
-    def _setup_menu(self):
-        """Set up the menu bar."""
-        menubar = self.menuBar()
-
-        # File menu
-        file_menu = menubar.addMenu("&File")
-
-        exit_action = QAction("E&xit", self)
-        exit_action.setShortcut("Ctrl+Q")
-        exit_action.triggered.connect(self.close)
-        file_menu.addAction(exit_action)
-
-        # View menu
-        view_menu = menubar.addMenu("&View")
-
-        reset_action = QAction("&Reset Parameters", self)
-        reset_action.setShortcut("Ctrl+R")
-        reset_action.triggered.connect(self._reset_parameters)
-        view_menu.addAction(reset_action)
-
-        # Help menu
-        help_menu = menubar.addMenu("&Help")
-
-        about_action = QAction("&About", self)
-        about_action.triggered.connect(self._show_about)
-        help_menu.addAction(about_action)
-
-        docs_action = QAction("&Documentation", self)
-        docs_action.triggered.connect(self._show_docs)
-        help_menu.addAction(docs_action)
-
-    def _setup_statusbar(self):
-        """Set up the status bar with animated indicators."""
+        outer = QVBoxLayout(central)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(self._create_topbar())
+        content = QWidget()
+        self.body_layout = QVBoxLayout(content)
+        self.body_layout.setContentsMargins(40, 32, 40, 18)
+        self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.main_splitter.setChildrenCollapsible(False)
+        self.main_splitter.setHandleWidth(36)
+        self.controls_panel = self._create_left_panel()
+        self.main_splitter.addWidget(self.controls_panel)
+        self.main_splitter.addWidget(self._create_right_panel())
+        self.main_splitter.setStretchFactor(0, 0)
+        self.main_splitter.setStretchFactor(1, 1)
+        self.main_splitter.setSizes([254, 850])
+        self.body_layout.addWidget(self.main_splitter)
+        outer.addWidget(content, 1)
         self.statusbar = QStatusBar()
+        self.statusbar.setSizeGripEnabled(True)
         self.setStatusBar(self.statusbar)
-
-        # Main status message
-        self.status_message = QLabel("Ready - Select a shape and enter parameters")
-        self.status_message.setProperty("caption", True)
-        self.status_message.setStyleSheet("color: #94A3B8; padding: 4px 12px;")
+        self.status_message = label("Ready", "Muted")
         self.statusbar.addWidget(self.status_message, 1)
-
-        # Status indicator dot
-        self.status_indicator = QLabel("●")
-        self.status_indicator.setStyleSheet("color: #00D4FF; font-size: 10px; padding-right: 12px;")
-        self.status_indicator.setProperty("status", "active")
-        self.statusbar.addPermanentWidget(self.status_indicator)
-
-        # Shape info label
-        self.shape_info_label = QLabel("")
-        self.shape_info_label.setProperty("caption", True)
-        self.shape_info_label.setStyleSheet("color: #64748B; padding-right: 16px;")
+        self.shape_info_label = label("cm  /  cm²  /  cm³", "Muted")
         self.statusbar.addPermanentWidget(self.shape_info_label)
 
-        # Start pulse animation for status indicator
-        self._start_status_pulse()
+    def _create_topbar(self):
+        bar = QFrame()
+        bar.setObjectName("TopBar")
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(40, 18, 40, 18)
+        layout.setSpacing(12)
+        layout.addWidget(BrandMark())
+        layout.addWidget(label("MarksGeometrys", "Brand"))
+        layout.addStretch()
+        layout.addWidget(label("Workspace", "ActiveNavigation"))
+        layout.addSpacing(20)
+        for title, callback in (("Guide", self._show_docs), ("About", self._show_about)):
+            button = QPushButton(title)
+            button.setObjectName("Navigation")
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.clicked.connect(callback)
+            layout.addWidget(button)
+            layout.addSpacing(12)
+        self.preferences_menu = QMenu(self)
+        self.preferences_button = QPushButton("Preferences")
+        self.preferences_button.setObjectName("Navigation")
+        self.preferences_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.preferences_button.clicked.connect(self._show_preferences)
+        layout.addWidget(self.preferences_button)
+        return bar
 
-    def _animate_entrance(self):
-        """Animate the entrance of the main window elements."""
-        # Fade in the main window
-        self._opacity_effect = QGraphicsOpacityEffect(self)
-        self._opacity_effect.setOpacity(0.0)
-        self.setGraphicsEffect(self._opacity_effect)
+    def _create_left_panel(self):
+        panel = QFrame()
+        panel.setObjectName("Card")
+        panel.setMinimumWidth(228)
+        panel.setMaximumWidth(300)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+        self.controls_scroll = QScrollArea()
+        self.controls_scroll.setWidgetResizable(True)
+        self.controls_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_content = QWidget()
+        fields_layout = QVBoxLayout(scroll_content)
+        fields_layout.setContentsMargins(0, 0, 6, 8)
+        fields_layout.setSpacing(18)
+        self.shape_selector = ShapeSelectorWidget()
+        fields_layout.addWidget(self.shape_selector)
+        self.description_label = label("", "Description")
+        self.description_label.setWordWrap(True)
+        fields_layout.addWidget(self.description_label)
+        self.parameter_heading = label("Parameters", "SectionLabel")
+        fields_layout.addWidget(self.parameter_heading)
+        self.param_form = ParameterFormWidget()
+        self.param_form.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.param_form.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        fields_layout.addWidget(self.param_form)
+        self.error_label = label("", "Error")
+        self.error_label.setWordWrap(True)
+        self.error_label.hide()
+        fields_layout.addWidget(self.error_label)
+        fields_layout.addStretch(1)
+        self.controls_scroll.setWidget(scroll_content)
+        layout.addWidget(self.controls_scroll, 1)
+        self.calc_button = QPushButton("Calculate")
+        self.calc_button.setObjectName("PrimaryButton")
+        self.calc_button.setMinimumHeight(44)
+        self.calc_button.setToolTip("Calculate with marksgeometrys (Ctrl+Enter)")
+        self.calc_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        layout.addWidget(self.calc_button)
+        self.reset_button = QPushButton("Reset parameters")
+        self.reset_button.setObjectName("GhostButton")
+        self.reset_button.setToolTip("Restore the initial dimensions (Ctrl+R)")
+        self.reset_button.clicked.connect(self._reset_parameters)
+        layout.addWidget(self.reset_button)
+        return panel
 
-        self._entrance_anim = QPropertyAnimation(self._opacity_effect, b"opacity")
-        self._entrance_anim.setDuration(500)
-        self._entrance_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-        self._entrance_anim.setStartValue(0.0)
-        self._entrance_anim.setEndValue(1.0)
-        self._entrance_anim.start()
+    def _create_right_panel(self):
+        panel = QWidget()
+        panel.setObjectName("PanelContent")
+        panel.setMinimumWidth(380)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(22)
+        self.viewer_card = QFrame()
+        self.viewer_card.setObjectName("ViewerCard")
+        viewer_layout = QVBoxLayout(self.viewer_card)
+        viewer_layout.setContentsMargins(0, 0, 0, 0)
+        viewer_layout.setSpacing(12)
+        title_row = QHBoxLayout()
+        title_row.setSpacing(10)
+        self.viewer_title = label("Circle", "Heading")
+        self.viewer_title.setWordWrap(True)
+        self.viewer_title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        title_row.addWidget(self.viewer_title, 1)
+        self.dimension_badge = label("2D", "DimensionBadge")
+        title_row.addWidget(self.dimension_badge)
+        title_row.addSpacing(16)
+        self.measurement_combo = QComboBox()
+        self.measurement_combo.setObjectName("MeasurementPicker")
+        self.measurement_combo.setAccessibleName("Measurement view")
+        self.measurement_combo.setToolTip("Show dimensions, highlight area, or explore volume")
+        for title, mode in (("Dimensions", "dimensions"), ("Area", "area"), ("Volume", "volume")):
+            self.measurement_combo.addItem(title, mode)
+        self.measurement_combo.setMinimumContentsLength(10)
+        title_row.addWidget(self.measurement_combo)
+        viewer_layout.addLayout(title_row)
+        self.viz_stack = QStackedWidget()
+        self.viz_stack.setMinimumHeight(200)
+        self.viz_stack.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.viz_2d_widget = ShapeVisualizationWidget()
+        self.viz_3d_widget = GLVisualizationWidget()
+        self.viz_stack.addWidget(self.viz_2d_widget)
+        self.viz_stack.addWidget(self.viz_3d_widget)
+        viewer_layout.addWidget(self.viz_stack, 1)
+        self.measurement_help = label("", "Description")
+        self.measurement_help.setWordWrap(True)
+        self.measurement_help.setMinimumHeight(30)
+        viewer_layout.addWidget(self.measurement_help)
+        self.viewer_toolbar = QWidget()
+        tools = QHBoxLayout(self.viewer_toolbar)
+        tools.setContentsMargins(0, 0, 0, 0)
+        tools.setSpacing(5)
+        self.viewer_hint = label("Drag to pan · Scroll to zoom", "Muted")
+        self.viewer_hint.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        tools.addWidget(self.viewer_hint, 1)
+        self.grid_button = self._tool("Grid", "Show the construction grid", True)
+        self.grid_button.toggled.connect(self._toggle_grid)
+        tools.addWidget(self.grid_button)
+        self.rotate_button = self._tool("Rotate", "Rotate the 3D model automatically", True)
+        self.rotate_button.toggled.connect(self._toggle_rotation)
+        tools.addWidget(self.rotate_button)
+        self.reset_view_button = self._tool("Reset view", "Reset the camera (Ctrl+0)")
+        self.reset_view_button.clicked.connect(self._reset_view)
+        tools.addWidget(self.reset_view_button)
+        viewer_layout.addWidget(self.viewer_toolbar)
+        layout.addWidget(self.viewer_card, 1)
+        self.results_widget = ResultsWidget()
+        layout.addWidget(self.results_widget)
+        return panel
 
-        # Remove effect after animation
-        def cleanup():
-            self.setGraphicsEffect(None)
-        QTimer.singleShot(500, cleanup)
+    def _tool(self, text, tooltip, checkable=False):
+        button = QPushButton(text)
+        button.setObjectName("ToolButton")
+        button.setToolTip(tooltip)
+        button.setAccessibleName(tooltip)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.setCheckable(checkable)
+        return button
+
+    def _setup_actions(self):
+        for text, shortcut, callback in (
+            ("Calculate", "Ctrl+Return", self._calculate),
+            ("Reset parameters", "Ctrl+R", self._reset_parameters),
+            ("Reset view", "Ctrl+0", self._reset_view),
+            ("Guide", "F1", self._show_docs),
+            ("Close", "Ctrl+Q", self.close),
+        ):
+            action = QAction(text, self)
+            action.setShortcut(shortcut)
+            action.triggered.connect(callback)
+            self.addAction(action)
+        self.motion_button = QAction("Animations", self)
+        self.motion_button.setCheckable(True)
+        self.motion_button.setChecked(True)
+        self.motion_button.toggled.connect(self._set_motion_enabled)
+        self.preferences_menu.addAction(self.motion_button)
+        self.dimensions_button = QAction("Dimension labels", self)
+        self.dimensions_button.setCheckable(True)
+        self.dimensions_button.setChecked(True)
+        self.dimensions_button.toggled.connect(self._toggle_dimensions)
+        self.preferences_menu.addAction(self.dimensions_button)
+        self.wireframe_button = QAction("Wireframe", self)
+        self.wireframe_button.setCheckable(True)
+        self.wireframe_button.toggled.connect(self.viz_3d_widget.set_wireframe)
+        self.preferences_menu.addAction(self.wireframe_button)
 
     def _connect_signals(self):
-        """Connect widget signals."""
         self.shape_selector.shape_changed.connect(self._on_shape_changed)
         self.param_form.values_changed.connect(self._on_values_changed)
         self.calc_button.clicked.connect(self._calculate)
+        self.measurement_combo.currentIndexChanged.connect(self._on_measurement_mode_changed)
 
-    def _start_status_pulse(self):
-        """Start the pulsing animation for the status indicator using QPropertyAnimation."""
-        # Create opacity effect for smooth pulse
-        self._status_opacity_effect = QGraphicsOpacityEffect(self.status_indicator)
-        self._status_opacity_effect.setOpacity(1.0)
-        self.status_indicator.setGraphicsEffect(self._status_opacity_effect)
-
-        # Create the pulse animation (fade in/out)
-        self._pulse_animation = QPropertyAnimation(self._status_opacity_effect, b"opacity")
-        self._pulse_animation.setDuration(1000)
-        self._pulse_animation.setEasingCurve(QEasingCurve.Type.InOutSine)
-        self._pulse_animation.setStartValue(1.0)
-        self._pulse_animation.setEndValue(0.3)
-        self._pulse_animation.setLoopCount(-1)  # Infinite loop
-
-        # Create a sequential group for continuous pulsing
-        self._pulse_group = QSequentialAnimationGroup()
-        self._pulse_group.addAnimation(self._pulse_animation)
-
-        # Return animation
-        pulse_back = QPropertyAnimation(self._status_opacity_effect, b"opacity")
-        pulse_back.setDuration(1000)
-        pulse_back.setEasingCurve(QEasingCurve.Type.InOutSine)
-        pulse_back.setStartValue(0.3)
-        pulse_back.setEndValue(1.0)
-        self._pulse_group.addAnimation(pulse_back)
-
-        self._pulse_group.setLoopCount(-1)
-        self._pulse_group.start()
-
-    def _on_shape_changed(self, shape_name: str):
-        """Handle shape selection change."""
-        self.current_shape_config = get_shape_config(shape_name)
-        if not self.current_shape_config:
+    def _on_shape_changed(self, shape_name):
+        config = get_shape_config(shape_name)
+        if config is None:
             return
+        self.current_shape_config = config
+        self.param_form.blockSignals(True)
+        self.param_form.set_shape(config)
+        self.param_form.blockSignals(False)
+        form_height = sum(field.sizeHint().height() for field in self.param_form.parameter_widgets)
+        form_height += max(0, len(config.parameters) - 1) * 14 + 8
+        self.param_form.setFixedHeight(max(78, form_height))
+        self.controls_scroll.verticalScrollBar().setValue(0)
+        self.current_values = self.param_form.get_values()
+        self.description_label.setText(config.description)
+        self.viewer_title.setText(SHAPE_NAMES.get(config.name, config.display_name))
+        is_3d = config.category == "3D"
+        self.viz_stack.setCurrentIndex(int(is_3d))
+        self._active_viewer().set_shape(config, self.current_values)
+        self.rotate_button.setVisible(is_3d)
+        self.wireframe_button.setVisible(is_3d)
+        self.dimension_badge.setText(config.category)
+        self.viewer_hint.setText("Drag to orbit · Scroll to zoom" if is_3d else "Drag to pan · Scroll to zoom")
+        self._on_measurement_mode_changed()
+        self._clear_results()
+        self.status_message.setText("Ready")
 
-        # Update description
-        self.description_label.setText(self.current_shape_config.description)
-
-        # Update parameter form
-        self.param_form.set_shape(self.current_shape_config)
-
-        # Update visualization with default values
-        default_values = {p.name: p.default or 0 for p in self.current_shape_config.parameters}
-        self.current_values = default_values
-
-        # Switch between 2D and 3D visualization based on shape category
-        is_3d = self.current_shape_config.category == "3D"
-        if is_3d:
-            self.viz_stack.setCurrentIndex(1)  # 3D widget
-            self.viz_3d_widget.set_shape(self.current_shape_config, default_values)
-        else:
-            self.viz_stack.setCurrentIndex(0)  # 2D widget
-            self.viz_2d_widget.set_shape(self.current_shape_config, default_values)
-
-        # Clear results
-        self.results_widget.set_results(None, None, is_3d, self.current_shape_config.name)
-
-        # Update status
-        self.status_message.setText(f"Selected: {self.current_shape_config.display_name}")
-        self.shape_info_label.setText(f"{self.current_shape_config.category} Shape")
-
-    def _on_values_changed(self, values: Dict[str, float]):
-        """Handle parameter value changes."""
-        self.current_values = values
+    def _on_values_changed(self, values):
+        self.current_values = values.copy()
         if self.current_shape_config:
-            is_3d = self.current_shape_config.category == "3D"
-            if is_3d:
-                self.viz_3d_widget.set_shape(self.current_shape_config, values)
-            else:
-                self.viz_2d_widget.set_shape(self.current_shape_config, values)
-            # Update status with current parameter preview
-            param_str = ", ".join([f"{k}={v:.1f}" for k, v in values.items()])
-            self.status_message.setText(f"Parameters: {param_str}")
+            self._active_viewer().set_shape(self.current_shape_config, values)
+            self._clear_results()
+            self.status_message.setText("Dimensions changed")
+
+    def _on_measurement_mode_changed(self, index=None):
+        mode = self.measurement_combo.currentData()
+        for viewer in (self.viz_2d_widget, self.viz_3d_widget):
+            viewer.set_measurement_mode(mode)
+        is_3d = self.current_shape_config is not None and self.current_shape_config.category == "3D"
+        self.wireframe_button.setEnabled(is_3d and mode == "dimensions")
+        if mode == "area":
+            explanation = ("A · Surface area covers all the outside faces of the solid. Measured in cm²."
+                           if is_3d else "A · Area counts square units across the enclosed surface, measured in cm².")
+        elif mode == "volume":
+            explanation = ("V · Volume is the space inside the solid. The layers reveal its interior. Measured in cm³."
+                           if is_3d else "A plane figure has no volume. A 1 cm × 1 cm × 1 cm cube represents 1 cm³.")
+        else:
+            explanation = ""
+        self.measurement_help.setText(explanation)
+        self.measurement_help.setVisible(bool(explanation))
+
+    def _clear_results(self):
+        if self.current_shape_config:
+            self.results_widget.set_results(None, None,
+                self.current_shape_config.category == "3D", self.current_shape_config.name)
+        self.error_label.hide()
+
+    def _active_viewer(self):
+        return self.viz_stack.currentWidget()
 
     def _calculate(self):
-        """Calculate area and/or volume for the current shape."""
-        if not self.current_shape_config:
-            QMessageBox.warning(self, "No Shape", "Please select a shape first.")
+        if self.current_shape_config is None or self._calculation_in_progress:
             return
-
-        # Show loading state
-        self._set_calculating(True)
-
-        # Use a timer to allow UI to update before calculation
-        QTimer.singleShot(50, self._perform_calculation)
-
-    def _perform_calculation(self):
-        """Perform the actual calculation (called after UI updates)."""
+        self._calculation_in_progress = True
+        self.calc_button.setEnabled(False)
+        self.error_label.hide()
+        config = self.current_shape_config
         try:
-            # Get the class from marksgeometrys
-            cls = getattr(marksgeometrys, self.current_shape_config.class_name)
-
-            # Create instance with current values
-            instance = cls(**self.current_values)
-
-            # Calculate area
-            area = None
-            if self.current_shape_config.has_area:
-                area = instance.area()
-
-            # Calculate volume (note: Sphere uses 'volum' not 'volume')
-            volume = None
-            if self.current_shape_config.has_volume:
-                if hasattr(instance, 'volume'):
-                    volume = instance.volume()
-                elif hasattr(instance, 'volum'):
-                    volume = instance.volum()
-
-            # Update results
-            self.results_widget.set_results(area, volume, self.current_shape_config.category == "3D", self.current_shape_config.name)
-
-            # Update status - parse values to handle string results from marksgeometrys
-            def parse_val(v):
-                if v is None:
-                    return None
-                if isinstance(v, (int, float)):
-                    return float(v)
-                if isinstance(v, str):
-                    import re
-                    match = re.match(r'^([\d.]+)', v.strip())
-                    if match:
-                        return float(match.group(1))
-                return None
-
-            area_val = parse_val(area)
-            volume_val = parse_val(volume)
-
-            # Build status message with clear labels
-            parts = []
-            if area_val is not None:
-                parts.append(f"Area = {area_val:,.2f} cm²")
-            if volume_val is not None:
-                parts.append(f"Volume = {volume_val:,.2f} cm³")
-
-            if parts:
-                msg = "Calculated: " + ", ".join(parts)
-            else:
-                msg = "Calculated"
-
-            self.status_message.setText(msg)
-            self.status_indicator.setProperty("status", "success")
-            self.status_indicator.setStyleSheet("color: #10B981; font-size: 10px; padding-right: 12px;")
-            self.shape_info_label.setText(f"{self.current_shape_config.display_name}")
-
-        except Exception as e:
-            QMessageBox.critical(self, "Calculation Error", f"Error calculating: {str(e)}")
-            self.status_message.setText("Calculation failed")
-            self.status_indicator.setProperty("status", "error")
-            self.status_indicator.setStyleSheet("color: #EF4444; font-size: 10px; padding-right: 12px;")
-
+            for field in self.param_form.parameter_widgets:
+                field.spinbox.interpretText()
+            self.current_values = self.param_form.get_values()
+            area, volume = calculate_shape(config, self.current_values)
+            self.results_widget.set_results(area, volume, config.category == "3D", config.name)
+            self.status_message.setText("Calculated by " + LIBRARY_LABEL)
+        except LibraryCalculationError as exc:
+            self.results_widget.set_results(exc.area, exc.volume, config.category == "3D", config.name)
+            self.error_label.setText(str(exc))
+            self.error_label.show()
+            self.controls_scroll.ensureWidgetVisible(self.error_label)
+            self.status_message.setText("Calculation unavailable in " + LIBRARY_LABEL)
+        except Exception as exc:
+            self.results_widget.set_results(None, None, config.category == "3D", config.name)
+            self.error_label.setText("Check the parameters: " + str(exc))
+            self.error_label.show()
+            self.controls_scroll.ensureWidgetVisible(self.error_label)
+            self.status_message.setText("Calculation could not be completed")
         finally:
-            self._set_calculating(False)
-
-    def _set_calculating(self, calculating: bool):
-        """Set the calculating state with loading animation."""
-        self._calculation_in_progress = calculating
-        self.calc_button.setEnabled(not calculating)
-        self.loading_bar.setVisible(calculating)
-
-        if calculating:
-            self.calc_button.setText("Calculating...")
-            self.status_message.setText("Calculating...")
-            self.status_indicator.setProperty("status", "warning")
-            self.status_indicator.setStyleSheet("color: #F59E0B; font-size: 10px; padding-right: 12px;")
-
-            # Start button pulse animation
-            self._start_button_pulse()
-        else:
-            self.calc_button.setText("Calculate Area / Volume")
-            self._stop_button_pulse()
-
-            # Restore pulse animation
-            if hasattr(self, '_pulse_group'):
-                self._pulse_group.start()
-
-    def _start_button_pulse(self):
-        """Start pulse animation on calculate button during calculation."""
-        # Create color animation for button
-        self._button_pulse_anim = QPropertyAnimation(self.calc_button, b"styleSheet")
-        self._button_pulse_anim.setDuration(800)
-        self._button_pulse_anim.setEasingCurve(QEasingCurve.Type.InOutSine)
-        self._button_pulse_anim.setLoopCount(-1)
-
-        # We'll use a simpler approach - animate the loading bar
-        self._loading_anim = QPropertyAnimation(self.loading_bar, b"maximum")
-        self._loading_anim.setDuration(1000)
-        self._loading_anim.setEasingCurve(QEasingCurve.Type.InOutSine)
-        self._loading_anim.setStartValue(0)
-        self._loading_anim.setEndValue(100)
-        self._loading_anim.setLoopCount(-1)
-        self._loading_anim.start()
-
-    def _stop_button_pulse(self):
-        """Stop pulse animation on calculate button."""
-        if hasattr(self, '_loading_anim') and self._loading_anim:
-            self._loading_anim.stop()
-            self._loading_anim = None
-        if hasattr(self, '_button_pulse_anim') and self._button_pulse_anim:
-            self._button_pulse_anim.stop()
-            self._button_pulse_anim = None
-        self.loading_bar.setVisible(calculating)
-
-        if calculating:
-            self.calc_button.setText("Calculating...")
-            self.status_message.setText("Calculating...")
-            self.status_indicator.setProperty("status", "warning")
-            self.status_indicator.setStyleSheet("color: #F59E0B; font-size: 10px; padding-right: 12px;")
-        else:
-            self.calc_button.setText("Calculate Area / Volume")
+            self._calculation_in_progress = False
+            self.calc_button.setEnabled(True)
 
     def _reset_parameters(self):
-        """Reset parameters to defaults."""
         if self.current_shape_config:
-            default_values = {p.name: p.default or 0 for p in self.current_shape_config.parameters}
-            for name, value in default_values.items():
-                # Find and update the corresponding widget
-                for widget in self.param_form.parameter_widgets:
-                    if widget.parameter.name == name:
-                        widget.set_value(value)
-            self.current_values = default_values
-            is_3d = self.current_shape_config.category == "3D"
-            if is_3d:
-                self.viz_3d_widget.set_shape(self.current_shape_config, default_values)
-            else:
-                self.viz_2d_widget.set_shape(self.current_shape_config, default_values)
-            self.status_message.setText("Parameters reset to defaults")
-            self.status_indicator.setProperty("status", "active")
-            self.status_indicator.setStyleSheet("color: #00D4FF; font-size: 10px; padding-right: 12px;")
+            self._on_shape_changed(self.current_shape_config.name)
+            self._reset_view()
 
-    def _show_about(self):
-        """Show about dialog."""
-        QMessageBox.about(self, "About MarksGeometrys UI",
-            "<h3>MarksGeometrys UI</h3>"
-            "<p>Visual interface for the <b>marksgeometrys</b> Python library.</p>"
-            "<p>Calculate areas and volumes of 2D and 3D geometric shapes.</p>"
-            "<p>Version 0.1.0</p>"
-            "<p>Built with PyQt6</p>"
-        )
+    def _reset_view(self):
+        self._active_viewer().reset_view()
+
+    def _toggle_grid(self, visible):
+        for viewer in (self.viz_2d_widget, self.viz_3d_widget):
+            viewer.set_grid_visible(visible)
+
+    def _toggle_dimensions(self, visible):
+        for viewer in (self.viz_2d_widget, self.viz_3d_widget):
+            viewer.set_dimensions_visible(visible)
+
+    def _toggle_rotation(self, enabled):
+        self.viz_3d_widget.set_auto_rotate(enabled and self._motion_enabled)
+
+    def _set_motion_enabled(self, enabled):
+        self._motion_enabled = enabled
+        if not enabled and hasattr(self, "_entrance"):
+            self._entrance.stop()
+            self.setWindowOpacity(1.0)
+        for viewer in (self.viz_2d_widget, self.viz_3d_widget):
+            viewer.set_animations_enabled(enabled)
+        self.results_widget.set_animations_enabled(enabled)
+        self._toggle_rotation(self.rotate_button.isChecked())
+
+    def _animate_entrance(self):
+        if self._motion_enabled and self.isVisible():
+            self._entrance = QPropertyAnimation(self, b"windowOpacity", self)
+            self._entrance.setDuration(340)
+            self._entrance.setStartValue(0.0)
+            self._entrance.setEndValue(1.0)
+            self._entrance.setEasingCurve(QEasingCurve.Type.OutCubic)
+            self._entrance.start()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "body_layout"):
+            compact = self.width() < 1000
+            margin = 22 if compact else 40
+            self.body_layout.setContentsMargins(margin, 22 if compact else 32, margin, 12)
+            self.main_splitter.setHandleWidth(24 if compact else 36)
+            self.viewer_hint.setVisible(self.width() >= 900)
+            for viewer in (self.viz_stack, self.viz_2d_widget, self.viz_3d_widget):
+                viewer.setMinimumHeight(140 if self.height() < 700 else 200)
+
+    def _show_preferences(self):
+        self.preferences_menu.popup(self.preferences_button.mapToGlobal(QPoint(0, self.preferences_button.height())))
 
     def _show_docs(self):
-        """Show documentation/help."""
-        QMessageBox.information(self, "Documentation",
-            "MarksGeometrys UI uses the marksgeometrys library.\n\n"
-            "1. Select a shape category (2D or 3D)\n"
-            "2. Choose a specific shape\n"
-            "3. Adjust the parameters\n"
-            "4. Click 'Calculate Area / Volume'\n\n"
-            "All measurements are in centimeters (cm).\n"
-            "Areas are in cm², volumes in cm³."
-        )
+        QMessageBox.information(self, "Guide",
+            "Choose a 2D or 3D shape, adjust its dimensions, then select Calculate.\n\n"
+            "The Dimensions view labels each length directly on the figure.\n"
+            "Area highlights the enclosed surface or the outside faces.\n"
+            "Volume reveals interior layers; plane figures have no volume.\n\n"
+            "Drag to pan in 2D or orbit in 3D. Scroll to zoom.\n"
+            "Preferences includes animations, dimension labels and wireframe.\n\n"
+            "Ctrl+Enter: calculate · Ctrl+R: reset parameters\n"
+            "Ctrl+0: reset view · Ctrl+Q: close\n\n"
+            "All area and volume results come directly from " + LIBRARY_LABEL + ".")
 
-
-class AnimatedStackedWidget(QStackedWidget):
-    """QStackedWidget with smooth fade/slide transitions between pages."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._animation = None
-        self._current_widget = None
-        self._next_widget = None
-        self._animation_direction = 1  # 1 for forward, -1 for backward
-
-    def setCurrentIndex(self, index: int):
-        """Switch to the given index with smooth animation."""
-        if index == self.currentIndex() or index < 0 or index >= self.count():
-            super().setCurrentIndex(index)
-            return
-
-        # Stop any ongoing animation
-        if self._animation and self._animation.state() == QAbstractAnimation.State.Running:
-            self._animation.stop()
-
-        current = self.currentWidget()
-        next_widget = self.widget(index)
-
-        # Prepare widgets for animation
-        current_pos = current.pos()
-        next_widget.setGeometry(self.rect())
-        next_widget.show()
-        next_widget.raise_()
-
-        # Create opacity effects
-        current_effect = QGraphicsOpacityEffect(current)
-        current.setGraphicsEffect(current_effect)
-        current_effect.setOpacity(1.0)
-
-        next_effect = QGraphicsOpacityEffect(next_widget)
-        next_widget.setGraphicsEffect(next_effect)
-        next_effect.setOpacity(0.0)
-
-        # Slide offset
-        offset = 30 * self._animation_direction
-
-        # Animation group for parallel animations
-        self._animation = QParallelAnimationGroup()
-
-        # Fade out current
-        fade_out = QPropertyAnimation(current_effect, b"opacity")
-        fade_out.setDuration(250)
-        fade_out.setEasingCurve(QEasingCurve.Type.OutCubic)
-        fade_out.setStartValue(1.0)
-        fade_out.setEndValue(0.0)
-
-        # Fade in next
-        fade_in = QPropertyAnimation(next_effect, b"opacity")
-        fade_in.setDuration(250)
-        fade_in.setEasingCurve(QEasingCurve.Type.OutCubic)
-        fade_in.setStartValue(0.0)
-        fade_in.setEndValue(1.0)
-
-        # Slide current
-        slide_out = QPropertyAnimation(current, b"pos")
-        slide_out.setDuration(250)
-        slide_out.setEasingCurve(QEasingCurve.Type.OutCubic)
-        slide_out.setStartValue(current_pos)
-        slide_out.setEndValue(QPoint(current_pos.x() - offset, current_pos.y()))
-
-        # Slide next
-        next_widget.move(current_pos.x() + offset, current_pos.y())
-        slide_in = QPropertyAnimation(next_widget, b"pos")
-        slide_in.setDuration(250)
-        slide_in.setEasingCurve(QEasingCurve.Type.OutCubic)
-        slide_in.setStartValue(QPoint(current_pos.x() + offset, current_pos.y()))
-        slide_in.setEndValue(current_pos)
-
-        self._animation.addAnimation(fade_out)
-        self._animation.addAnimation(fade_in)
-        self._animation.addAnimation(slide_out)
-        self._animation.addAnimation(slide_in)
-
-        def on_finished():
-            current.setGraphicsEffect(None)
-            next_widget.setGraphicsEffect(None)
-            current.hide()
-            super(AnimatedStackedWidget, self).setCurrentIndex(index)
-            self._animation = None
-
-        self._animation.finished.connect(on_finished)
-        self._animation.start()
-
-        # Toggle direction for next transition
-        self._animation_direction *= -1
+    def _show_about(self):
+        QMessageBox.information(self, "About MarksGeometrys",
+            "MarksGeometrys\n\nA visual interface for the marksgeometrys Python library.\n\n"
+            "Calculation engine: " + LIBRARY_LABEL + "\n"
+            "The interface displays the library's outputs without replacement formulas.\n\n"
+            "Lengths: cm · Areas: cm² · Volumes: cm³")
 
 
 def main():
-    """Entry point for the application."""
-    import sys
     app = QApplication(sys.argv)
-    app.setApplicationName("MarksGeometrys UI")
+    app.setApplicationName("MarksGeometrys")
     app.setOrganizationName("MarksGeometrys")
-
-    # Set application font
-    font = QFont(FONTS["primary"])
-    font.setPointSize(10)
-    app.setFont(font)
-
-    # Set application-wide style (already applied per-window in MainWindow.__init__)
-    # This ensures any dialogs also get the theme
-    app.setStyleSheet(get_dark_theme_stylesheet())
-
+    app.setStyle("Fusion")
+    # Native popup frames also need a light palette when Windows uses dark mode.
+    palette = app.palette()
+    for role, color in (
+        (QPalette.ColorRole.Window, "#FFFFFF"),
+        (QPalette.ColorRole.Base, "#FFFFFF"),
+        (QPalette.ColorRole.Button, "#FFFFFF"),
+        (QPalette.ColorRole.WindowText, "#242434"),
+        (QPalette.ColorRole.Text, "#242434"),
+        (QPalette.ColorRole.ButtonText, "#242434"),
+        (QPalette.ColorRole.Highlight, "#E8E9FF"),
+        (QPalette.ColorRole.HighlightedText, "#2028FF"),
+    ):
+        palette.setColor(role, QColor(color))
+    app.setPalette(palette)
+    app.setFont(QFont(FONTS["primary"], 10))
+    app.setStyleSheet(get_light_theme_stylesheet())
+    mark = BrandMark()
+    icon = QPixmap(36, 36)
+    icon.fill(Qt.GlobalColor.transparent)
+    mark.render(icon)
+    app.setWindowIcon(QIcon(icon))
     window = MainWindow()
+    screen = app.primaryScreen()
+    if screen:
+        available = screen.availableGeometry()
+        window.resize(min(1220, available.width() - 32), min(820, available.height() - 48))
+        window.move(available.center() - window.rect().center())
     window.show()
-
     sys.exit(app.exec())

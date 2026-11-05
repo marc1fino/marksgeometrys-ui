@@ -1,191 +1,85 @@
-# MarksGeometrys UI
+# MarksGeometrys
 
-<p align="center">
-  <img src="https://img.shields.io/badge/python-3.8+-blue.svg" alt="Python Version">
-  <img src="https://img.shields.io/badge/PyQt6-6.6+-green.svg" alt="PyQt6 Version">
-  <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License">
-  <img src="https://img.shields.io/badge/status-active-brightgreen.svg" alt="Status">
-</p>
+A desktop interface for the [marksgeometrys](https://pypi.org/project/marksgeometrys/) Python library. Select a plane figure or solid, adjust its dimensions, and explore the geometry alongside the library's area and volume results.
 
-A beautiful, interactive desktop application for calculating areas and volumes of geometric shapes. Built on top of the [`marksgeometrys`](https://pypi.org/project/marksgeometrys/) Python library with a modern PyQt6 interface.
+![2D area view](docs/preview-2d.png)
+![3D dimension annotations](docs/preview-3d.png)
 
-## ✨ Features
+## Run
 
-- **25 Geometric Shapes** — 8 two-dimensional and 17 three-dimensional shapes
-- **Real-time Visualization** — See a visual representation of each shape as you adjust parameters
-- **Instant Calculations** — Compute area and volume with a single click
-- **Parameter Validation** — Input constraints prevent invalid geometries
-- **Modern UI** — Clean, responsive interface built with PyQt6
-- **Cross-platform** — Runs on Windows, macOS, and Linux
-
-## 📐 Supported Shapes
-
-### 2D Shapes (Area)
-| Shape | Parameters |
-|-------|------------|
-| Circle | Radius |
-| Square | Side |
-| Rectangle | Base, Height |
-| Triangle | Base, Height |
-| Rhombus | Large Diagonal, Small Diagonal |
-| Parallelogram | Base, Height |
-| Trapezoid | Large Base, Small Base, Height |
-| Regular Polygon | Side, Number of Sides, Apothem |
-
-### 3D Shapes (Area + Volume)
-| Shape | Parameters |
-|-------|------------|
-| Cube | Side |
-| Sphere | Radius |
-| Cylinder | Radius, Height |
-| Cone | Radius, Slant Height |
-| Cone Trunk (Frustum) | Small/Large Radius, Height, Slant Height |
-| Pyramid | Base Side, Sides, Apothem, Slant Height, Height |
-| Pyramid Trunk | Small/Large Base Sides, Apothems, Lateral Height, Height |
-| Tetrahedron | Edge, Height |
-| Octahedron | Edge |
-| Dodecahedron | Edge, Face Apothem |
-| Icosahedron | Edge |
-| Rectangular Prism | Length, Width, Depth, Height |
-| Quadrangular Prism | Two Base Sides, Height, Base Area |
-| Regular Polygon Prism | Side, Apothem, Sides, Height, Base Area |
-| Rhomboidal Prism | Diagonals, Height, Base Area |
-| Triangular Prism | Triangle Base, Triangle Height, Prism Height |
-| Trapezoidal Prism | Large/Small Base, Base Height, Prism Height, Prism Base |
-
-## 🚀 Installation
-
-### From PyPI (Recommended)
-```bash
-pip install marksgeometrys-ui
-```
-
-### From Source
-```bash
-git clone https://github.com/marc1fino/marksgeometrys-ui.git
-cd marksgeometrys-ui
-pip install -e .
-```
-
-### Development Install
-```bash
-git clone https://github.com/marc1fino/marksgeometrys-ui.git
-cd marksgeometrys-ui
-pip install -e ".[dev]"
-```
-
-## 🎮 Usage
-
-### Launch the Application
-```bash
-marksgeometrys-ui
-```
-
-Or use the short alias:
-```bash
-mgui
-```
-
-### Running from Source
-```bash
+```powershell
+python -m pip install -e .
 python -m marksgeometrys_ui
 ```
 
-## 🖥️ Interface Overview
+The `marksgeometrys-ui` and `mgui` commands are also available.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  MarksGeometrys - Geometry Calculator                        │
-├─────────────────────┬───────────────────────────────────────┤
-│  Category: [2D ▼]   │        Shape Visualization            │
-│  Shape:   [Circle ▼]│                                       │
-│                     │           ○○○○○                       │
-│  Description:       │         ○○○○○○○○○                     │
-│  A perfectly round  │        ○○○○○○○○○○○○                   │
-│  2D shape where     │         ○○○○○○○○○○○                   │
-│  all points are     │           ○○○○○○○○○                     │
-│  equidistant from   │             ○○○○○                       │
-│  the center.        │                                       │
-├─────────────────────┤                                       │
-│  Parameters:        ├───────────────────────────────────────┤
-│  Radius: 5.00 cm    │            Results                    │
-│                     │  ┌─────────────┐  ┌─────────────┐    │
-│  [Calculate]        │  │    Area     │  │   Volume    │    │
-│                     │  │  78.54 cm²  │  │     —       │    │
-│                     │  └─────────────┘  └─────────────┘    │
-└─────────────────────┴───────────────────────────────────────┘
-```
+## Calculations belong to marksgeometrys
 
-## 🏗️ Project Structure
+Every displayed area and volume comes directly from the installed `marksgeometrys` class through `area()`, `volume()`, or the sphere's `volum()` method. The interface does not replace results with its own formulas or modify the library.
 
-```
-marksgeometrys-ui/
-├── src/
-│   └── marksgeometrys_ui/
-│       ├── __init__.py          # Package initialization
-│       ├── __main__.py          # Entry point
-│       ├── main_window.py       # Main application window
-│       ├── shapes.py            # Shape configurations & parameters
-│       └── widgets.py           # Custom UI widgets
-├── pyproject.toml               # Project configuration
-├── README.md                    # This file
-├── LICENSE                      # MIT License
-└── .gitignore                   # Git ignore rules
-```
+`calculations.py` validates inputs, derives dependent lengths, supplies the library's constructor arguments, and parses numeric results. Required base areas also come from the library's own 2D classes. `library_parameters()` exposes the exact constructor arguments for inspection.
 
-## 🛠️ Development
+The installed library's behavior is preserved, including its limitations. With **marksgeometrys 0.1.1**, `Octohedron.area()` and `Octohedron.volume()` return `None` for positive edge lengths. The interface reports that upstream error instead of fabricating a result. Other returned numeric values are displayed unchanged, even where that release's formulas differ from standard geometric formulas. A successful area or volume is retained if the other measurement fails.
 
-### Requirements
-- Python 3.8+
-- PyQt6 6.6+
-- marksgeometrys 0.1.1+
+Some constructors require redundant inputs. The interface derives apothems and slant heights from the visible geometry; rectangular prisms use the entered third edge as the constructor's duplicate height. The legacy pyramid receives the base edge for both rectangular base-side arguments, and the trapezoidal prism's additional `pbase` length is the mean of its two parallel bases. No equivalent-area arguments are substituted to alter the library's results.
 
-### Running Tests
-```bash
-pytest
+## Explore the figure
+
+The **Dimensions / Area / Volume** selector changes the visual explanation:
+
+- **Dimensions:** symbols next to inputs correspond to dimension arrows attached to the figure. In 3D, the annotations move with the camera.
+- **Area:** the plane figure's enclosed region is highlighted with a clipped scale grid; solids highlight their exterior faces.
+- **Volume:** solids reveal layers inside their transparent surface. Plane figures have no volume, so the 2D view shows an illustrative unit cube representing 1 cm³.
+
+The illustrations explain what the measurements mean. They do not calculate or substitute the library's numeric results. Grid spacing is labelled and adapts to large dimensions; the unit cube is a separate explanatory example.
+
+Drag to pan in 2D or orbit in 3D, and scroll to zoom. **Reset view** restores the camera. **Preferences** contains animation, dimension-label, and wireframe options. Animations stop when hidden and can be disabled.
+
+The interface uses a restrained white layout, Arial typography, and blue linework. Inputs, labels, help, errors, documentation, and source comments are in English. Both viewports use Qt painting and work without PyOpenGL or an OpenGL context.
+
+## Shapes
+
+- **2D:** circle, square, rectangle, triangle, rhombus, parallelogram, trapezoid, regular polygon.
+- **3D:** cube, sphere, cylinder, cone, cone frustum, pyramid, pyramid frustum, tetrahedron, octahedron, dodecahedron, icosahedron, rectangular prism, quadrangular prism, regular polygon prism, rhomboidal prism, triangular prism, trapezoidal prism.
+
+Lengths use **cm**, areas **cm²**, and volumes **cm³**. A shared symbol registry keeps input labels and graphical annotations consistent. Polygon bases are regular; triangular and trapezoidal prism drawings use symmetric bases. Dependent dimensions are derived for the library's required constructor inputs.
+
+## Keyboard shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| Ctrl+Enter | Calculate using marksgeometrys |
+| Ctrl+R | Reset parameters |
+| Ctrl+0 | Reset the view |
+| F1 | Guide |
+| Ctrl+Q | Close |
+
+## Verification
+
+Tests use Python's built-in `unittest` and Qt's offscreen platform:
+
+```powershell
+python -m unittest discover -s tests -v
+python -m compileall -q src tests
 ```
 
-### Code Formatting
-```bash
-black src/
-ruff check src/
+Coverage includes library-call provenance for all 25 shapes, unchanged real-library results, upstream failures without local fallbacks, constructor arguments, validation, actual 3D meshes, camera interactions, projected dimension annotations, measurement modes, English controls, reduced motion, and compact layouts.
+
+## Source
+
+```text
+src/marksgeometrys_ui/
+    main_window.py    # Layout, navigation, actions, and application state
+    widgets.py        # Shape selection, parameters, and animated results
+    theme.py          # White workspace and typography
+    viewer_2d.py      # Plane geometry and measurement explanations
+    viewer_3d.py      # Meshes, projected dimensions, interior layers, and camera
+    calculations.py  # Strict adapter for marksgeometrys
+    symbols.py       # Shared dimension symbols
+    shapes.py        # Shape catalogue and independent dimensions
+    assets/          # Vector control icons
+tests/               # Library, viewport, control, and integration tests
 ```
 
-### Type Checking
-```bash
-mypy src/
-```
-
-## 📦 Building Distribution
-
-```bash
-pip install build
-python -m build
-```
-
-This creates `dist/marksgeometrys_ui-0.1.0.tar.gz` and `dist/marksgeometrys_ui-0.1.0-py3-none-any.whl`
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m '✨ Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- **[marksgeometrys](https://pypi.org/project/marksgeometrys/)** — My geometry calculation library
-- **[PyQt6](https://www.qt.io/)** — The GUI framework
-- **Icons** — [Feather Icons](https://feathericons.com/)
-
-## 📞 Support
-
-- **Issues**: [GitHub Issues](https://github.com/marc1fino/marksgeometrys-ui/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/marc1fino/marksgeometrys-ui/discussions)
+MIT license. Built with [marksgeometrys](https://pypi.org/project/marksgeometrys/) and [PyQt6](https://www.riverbankcomputing.com/software/pyqt/).

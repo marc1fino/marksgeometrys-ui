@@ -54,6 +54,9 @@ Issues = "https://github.com/marc1fino/marksgeometrys-ui/issues"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+marksgeometrys_ui = ["assets/*.svg", "assets/fonts/*.ttf", "assets/fonts/*-OFL.txt"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py38"
