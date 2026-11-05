@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
 )
 
 from .calculations import LIBRARY_LABEL, LibraryCalculationError, calculate_shape
+from .runtime import DependencyCompatibilityError, ensure_library_compatible
 from .shapes import ShapeConfig, get_shape_config
 from .theme import FONTS, get_light_theme_stylesheet
 from .typography import load_fonts
@@ -405,6 +406,12 @@ class MainWindow(QMainWindow):
             area, volume = calculate_shape(config, self.current_values, unit=unit)
             self.results_widget.set_results(area, volume, config.category == "3D", config.name)
             self.status_message.setText("Calculated by " + LIBRARY_LABEL)
+        except DependencyCompatibilityError as exc:
+            self._clear_results()
+            self.error_label.setText(str(exc))
+            self.error_label.show()
+            self.controls_scroll.ensureWidgetVisible(self.error_label)
+            self.status_message.setText("Update marksgeometrys to continue")
         except LibraryCalculationError as exc:
             self.results_widget.set_results(exc.area, exc.volume, config.category == "3D", config.name)
             self.error_label.setText(str(exc))
@@ -502,6 +509,11 @@ class MainWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
+    try:
+        ensure_library_compatible()
+    except DependencyCompatibilityError as exc:
+        QMessageBox.critical(None, "Library update required", str(exc))
+        raise SystemExit(1)
     load_fonts()
     app.setApplicationName("MarksGeometrys")
     app.setOrganizationName("MarksGeometrys")

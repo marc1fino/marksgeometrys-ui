@@ -16,6 +16,18 @@ python -m marksgeometrys_ui
 
 The `marksgeometrys-ui` and `mgui` commands are also available.
 
+### If an older library is loaded
+
+The Python used to launch the application must have `marksgeometrys >= 0.2` installed. Activating `.venv` and launching from a different terminal can select different Python installations. Upgrade the same interpreter you use to run the app, then close and restart existing app windows:
+
+```powershell
+python -m pip install --upgrade "marksgeometrys>=0.2"
+python -m pip install -e .
+python -m marksgeometrys_ui
+```
+
+The app checks the installed version and loaded unit-aware API before opening, and again before calculating. An incompatible installation produces an update message with the active interpreter and its exact upgrade command, rather than an unexpected-keyword error.
+
 ## Calculations belong to marksgeometrys
 
 The interface requires **marksgeometrys 0.2 or later**. Every displayed area and volume comes directly from the installed library through its numeric `area()` and `volume()` methods, including `Sphere.volume()`. The interface does not replace results with its own formulas or modify the library.
@@ -83,6 +95,7 @@ src/marksgeometrys_ui/
     viewer_2d.py      # Plane geometry and measurement explanations
     viewer_3d.py      # Meshes, projected dimensions, interior layers, and camera
     calculations.py  # Strict adapter for marksgeometrys
+    runtime.py       # Installed-version and loaded-API compatibility checks
     symbols.py       # Shared dimension symbols
     shapes.py        # Shape catalogue and independent dimensions
     assets/          # Vector control icons and licensed font files

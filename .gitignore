@@ -48,3 +48,5 @@ dmypy.json
 
 # Local config
 *.local
+
+tests/

@@ -13,6 +13,7 @@ from typing import Dict, Optional, Tuple, Union
 import marksgeometrys
 
 from .shapes import ShapeConfig
+from .runtime import ensure_library_compatible
 
 try:
     LIBRARY_VERSION = version("marksgeometrys")
@@ -105,6 +106,7 @@ def library_parameters(
     formula for other side counts. The selected unit labels the entered values;
     changing the unit does not convert their magnitudes.
     """
+    ensure_library_compatible()
     unit = _validate_unit(unit)
     dimensions = _validate(config, values)
     name = config.name

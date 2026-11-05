@@ -138,6 +138,18 @@ class WorkspaceTests(unittest.TestCase):
         self.assertIsNone(self.window.results_widget.area_card._value)
         self.assertEqual(self.window.results_widget.volume_card._value, 123.45)
 
+    def test_incompatible_runtime_reports_an_update_instead_of_a_parameter_error(self):
+        self.select("rectangle")
+        self.window._calculate()
+        with patch("marksgeometrys_ui.runtime.version", return_value="0.1.1"):
+            self.window._calculate()
+        self.assertTrue(self.window.error_label.isVisible())
+        self.assertIn("Installed version: 0.1.1", self.window.error_label.text())
+        self.assertNotIn("Check the parameters:", self.window.error_label.text())
+        self.assertEqual(self.window.status_message.text(), "Update marksgeometrys to continue")
+        self.assertIsNone(self.window.results_widget.area_card._value)
+        self.assertTrue(self.window.calc_button.isEnabled())
+
     def test_measurement_selector_explains_area_and_volume_in_both_categories(self):
         for name in ("circle", "cube"):
             self.select(name)
